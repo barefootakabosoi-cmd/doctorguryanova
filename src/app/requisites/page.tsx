@@ -28,15 +28,15 @@ export default function RequisitesPage() {
             </div>
             <div className="flex justify-between py-2 border-b border-slate-50">
               <span className="text-slate-500">ИНН</span>
-              <span className="font-medium text-slate-900">[УКАЖИТЕ ИНН]</span>
+              <span className="font-medium text-slate-900">773100908765</span>
             </div>
             <div className="flex justify-between py-2 border-b border-slate-50">
               <span className="text-slate-500">Телефон</span>
-              <span className="font-medium text-slate-900">+7 (999) 123-45-67</span>
+              <span className="font-medium text-slate-900">+7 (916) 100-40-53</span>
             </div>
             <div className="flex justify-between py-2">
               <span className="text-slate-500">Email</span>
-              <span className="font-medium text-slate-900">info@doctorguryanova.ru</span>
+              <span className="font-medium text-slate-900">v-guryanova@inbox.ru</span>
             </div>
           </div>
         </div>
