@@ -46,17 +46,46 @@ export default function BookingForm() {
   const submit = async () => {
     setLoading(true)
     try {
-      const res = await fetch("/api/booking/", {
+      const bookingRes = await fetch("/api/booking/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ direction, date, time, symptoms, name, phone, email, price }),
       })
-      if (res.ok) setStep(3)
-      else alert("Ошибка отправки. Попробуйте позже.")
+
+      if (!bookingRes.ok) {
+        alert("Ошибка сохранения записи. Попробуйте позже.")
+        setLoading(false)
+        return
+      }
+
+      const bookingData = await bookingRes.json()
+      const bookingId = bookingData.id || Date.now().toString()
+
+      const amount = prices[direction]
+      const paymentRes = await fetch("/api/payment/create/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          description: `Консультация: ${directionNames[direction]} — ${name}`,
+          returnUrl: `${window.location.origin}/payment/success/?paymentId={paymentId}`,
+          bookingId,
+        }),
+      })
+
+      const paymentData = await paymentRes.json()
+
+      if (!paymentRes.ok || !paymentData.paymentUrl) {
+        alert("Ошибка создания платежа: " + (paymentData.error || "Неизвестная ошибка"))
+        setLoading(false)
+        return
+      }
+
+      window.location.href = paymentData.paymentUrl
     } catch {
       alert("Ошибка сети. Попробуйте позже.")
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const reset = () => {
@@ -140,12 +169,12 @@ export default function BookingForm() {
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 text-sm" placeholder="email@example.com" />
               </div>
               <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
-                <p className="text-sm text-amber-800">После оплаты вы получите ссылку на видеоконсультацию. За 15 минут до приёма придёт SMS-напоминание.</p>
+                <p className="text-sm text-amber-800">После нажатия кнопки вы будете перенаправлены на страницу безопасной оплаты ЮKassa. После оплаты получите подтверждение на email.</p>
               </div>
               <div className="flex items-center justify-between pt-4">
                 <button onClick={() => setStep(1)} className="text-slate-500 hover:text-slate-800 font-medium text-sm transition-colors duration-300">← Назад</button>
                 <button onClick={submit} disabled={loading || !name || !phone} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-slate-800 transition-all duration-300 shadow-lg shadow-slate-900/10 active:scale-[0.98] disabled:opacity-50">
-                  {loading ? "Отправка..." : "Оплатить и записаться"}
+                  {loading ? "Создание платежа..." : "Оплатить и записаться"}
                 </button>
               </div>
             </div>

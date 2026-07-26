@@ -19,10 +19,10 @@ export default function Footer() {
           <div>
             <h5 className="text-white font-semibold mb-3">Информация</h5>
             <ul className="space-y-2">
+              <li><a href="/requisites/" className="hover:text-white transition-colors duration-300">Реквизиты и оферта</a></li>
               <li><a href="#about" className="hover:text-white transition-colors duration-300">О враче</a></li>
               <li><a href="#methods" className="hover:text-white transition-colors duration-300">Методы</a></li>
               <li><a href="#booking" className="hover:text-white transition-colors duration-300">Цены</a></li>
-              <li><a href="#" className="hover:text-white transition-colors duration-300">Политика конфиденциальности</a></li>
             </ul>
           </div>
           <div>
@@ -33,7 +33,7 @@ export default function Footer() {
           </div>
         </div>
         <div className="border-t border-slate-800 mt-10 pt-6 text-xs text-slate-500">
-          © 2026 Гурьянова В.А. Информация на сайте не является публичной офертой.
+          © 2026 Гурьянова В.А. <a href="/requisites/" className="hover:text-white underline">Реквизиты и публичная оферта</a>
         </div>
       </div>
     </footer>
