@@ -20,6 +20,13 @@
     "@types/node": "^20.14.11",
     "@types/react-dom": "^18.3.0",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.4.0"
+    "tailwind-merge": "^2.4.0",
+    "react-hook-form": "^7.52.1",
+    "zod": "^3.23.8",
+    "@hookform/resolvers": "^3.9.0",
+    "nodemailer": "^6.9.14"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^6.4.15"
   }
 }

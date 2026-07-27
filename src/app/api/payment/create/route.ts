@@ -3,7 +3,7 @@ import { NextRequest } from "next/server"
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { amount, description, returnUrl, bookingId } = body
+    const { amount, description, returnUrl, bookingId, email } = body
 
     const shopId = process.env.YOOKASSA_SHOP_ID
     const secretKey = process.env.YOOKASSA_SECRET_KEY
@@ -29,7 +29,16 @@ export async function POST(request: NextRequest) {
           return_url: returnUrl,
         },
         description,
-        metadata: { booking_id: bookingId },
+        metadata: { booking_id: bookingId, patient_email: email },
+        receipt: {
+          customer: { email: email || "info@doctorguryanova.ru" },
+          items: [{
+            description: description,
+            quantity: "1.00",
+            amount: { value: amount.toFixed(2), currency: "RUB" },
+            vat_code: 1,
+          }],
+        },
       }),
     })
 
