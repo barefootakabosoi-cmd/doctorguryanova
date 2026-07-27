@@ -27,7 +27,7 @@ export default function Footer() {
           </div>
           <div>
             <h5 className="text-white font-semibold mb-3">Контакты</h5>
-            <p className="mb-1">+7 (999) 123-45-67</p>
+            <p className="mb-1">+79161004053</p>
             <p className="mb-1">info@doctorguryanova.ru</p>
             <p>Telegram: @guryanova_doc</p>
           </div>

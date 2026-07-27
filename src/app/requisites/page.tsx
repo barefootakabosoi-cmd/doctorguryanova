@@ -37,7 +37,7 @@ export default function RequisitesPage() {
           <h2 className="text-lg font-bold text-slate-900 mt-6">6. Реквизиты</h2>
           <p><b>Исполнитель:</b> Гурьянова Валентина Андреевна</p>
           <p><b>Статус:</b> Самозанятый (НПД)</p>
-          <p><b>ИНН:</b> [УКАЖИТЕ ИНН]</p>
+          <p><b>ИНН:</b> 770943003</p>
           <p><b>Email:</b> info@doctorguryanova.ru</p>
 
           <h2 className="text-lg font-bold text-slate-900 mt-6">7. Заключительные положения</h2>
