@@ -1,5 +1,5 @@
 // src/lib/gigachat.ts
-// Клиент для работы с GigaChat API (Sber)
+// Клиент для GigaChat API (Sber)
 // ВАЖНО: Sber выдаёт ID и Secret в перепутанном порядке.
 // Для Basic Auth: decoded_secret (как username) : id (как password)
 
@@ -59,6 +59,33 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
+async function chatRequest(token: string, body: object): Promise<any> {
+  const payload = JSON.stringify(body);
+
+  const { status, data } = await httpsRequest(
+    {
+      hostname: "gigachat.devices.sberbank.ru",
+      port: 443,
+      path: "/api/v1/chat/completions",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        "Content-Length": Buffer.byteLength(payload),
+      },
+      rejectUnauthorized: false,
+    },
+    payload
+  );
+
+  if (status !== 200) {
+    throw new Error(`GigaChat API error: ${status} ${JSON.stringify(data)}`);
+  }
+
+  return data;
+}
+
 export async function chatCompletion(options: {
   model?: string;
   temperature?: number;
@@ -67,27 +94,12 @@ export async function chatCompletion(options: {
 }) {
   const token = await getAccessToken();
 
-  const response = await fetch("https://gigachat.devices.sberbank.ru/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      model: options.model || "GigaChat:latest",
-      messages: options.messages,
-      temperature: options.temperature ?? 0.3,
-      max_tokens: options.max_tokens ?? 2048,
-    }),
+  return chatRequest(token, {
+    model: options.model || "GigaChat:latest",
+    messages: options.messages,
+    temperature: options.temperature ?? 0.3,
+    max_tokens: options.max_tokens ?? 2048,
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`GigaChat API error: ${response.status} ${text}`);
-  }
-
-  return response.json();
 }
 
 export async function generateArticleFromAbstract(abstract: string, topic: string): Promise<string> {
