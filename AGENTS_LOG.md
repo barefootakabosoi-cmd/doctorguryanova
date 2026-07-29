@@ -56,3 +56,23 @@
 **Следующий шаг:**
 - ...
 ```
+
+## 2026-07-29 | Kimi | Интеграция GigaChat API
+
+**Контекст:** Подключение GigaChat для генерации медицинского контента.
+
+**Что сделано:**
+1. Создан src/lib/gigachat.ts — клиент для GigaChat API
+2. Созданы API routes: /api/ai/generate, /api/ai/status
+3. Создан scripts/test-gigachat.js
+4. Найден и исправлен баг: Sber выдаёт Client Secret в base64, ID/Secret перепутаны в Basic Auth
+5. Деплой на Vercel, проверка на проде: /api/ai/status возвращает configured: true
+
+**Ключевые находки:**
+- Sber Client Secret закодирован в base64, нужно декодировать
+- Для Basic Auth порядок: decoded_secret : client_id (перепутан!)
+- На macOS Node.js 18 требует rejectUnauthorized: false для ngw.devices.sberbank.ru:9443
+
+**Следующий шаг:**
+- Первая тестовая генерация статьи через /api/ai/generate
+- Подключение PubMed API для автоматического поиска научных статей
