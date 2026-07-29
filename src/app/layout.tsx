@@ -48,7 +48,7 @@ export const metadata: Metadata = {
     },
   },
   verification: {
-    yandex: "YANDEX_VERIFICATION_CODE",
+    yandex: "4d3ba462f450909b",
     google: "GOOGLE_VERIFICATION_CODE",
   },
 }
@@ -61,6 +61,7 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <head>
+        <meta name="yandex-verification" content="4d3ba462f450909b" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
