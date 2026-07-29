@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateWithGigaChat } from '@/lib/gigachat';
+import { chatCompletion } from '@/lib/gigachat';
 
 export const runtime = 'nodejs';
 
@@ -49,15 +49,21 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = SYSTEM_PROMPTS[template] || SYSTEM_PROMPTS.blog;
 
-    const result = await generateWithGigaChat({
-      systemPrompt,
-      userPrompt: `Тема: ${topic}`,
+    const result = await chatCompletion({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Тема: ${topic}` },
+      ],
+      temperature: 0.3,
+      max_tokens: 2500,
     });
+
+    const content = result.choices[0]?.message?.content ?? '';
 
     return NextResponse.json({
       success: true,
       template,
-      content: result,
+      content,
     });
   } catch (error: any) {
     console.error('Generate error:', error);

@@ -111,7 +111,7 @@ export default function AiAdminPage() {
 
   const clearHistory = () => {
     if (!confirm('Очистить всю историю?')) return;
-      setHistory([]);
+    setHistory([]);
     localStorage.removeItem('gigachat-history');
   };
 
