@@ -1,93 +1,68 @@
-export const runtime = "nodejs";
+import { NextRequest, NextResponse } from 'next/server';
+import { generateWithGigaChat } from '@/lib/gigachat';
 
-import { NextRequest, NextResponse } from "next/server";
-import {
-  generateArticleFromAbstract,
-  generateTelegramPost,
-  generateSEOMeta,
-} from "@/lib/gigachat";
+export const runtime = 'nodejs';
 
-const ALLOWED_TYPES = ["article", "telegram", "seo"] as const;
-type GenerateType = (typeof ALLOWED_TYPES)[number];
+const SYSTEM_PROMPTS: Record<string, string> = {
+  blog: `Ты — профессиональный медицинский копирайтер, пишешь для сайта врача-невролога Гурьяновой В.А.
+Пиши статью в блог на заданную тему.
+Требования:
+- Объём: 1500–2000 слов
+- Структура: введение, 3–5 разделов с подзаголовками H2, заключение
+- Тон: спокойный, уверенный, но не холодный. Объясняй простыми словами сложные вещи.
+- Обязательно: практические советы, когда обращаться к врачу
+- Без воды, без повторов, без шаблонных фраз "в современном мире"
+- Выводи только текст статьи, без мета-информации`,
 
-interface GenerateRequest {
-  type: GenerateType;
-  abstract?: string;
-  topic: string;
-  articleText?: string;
-}
+  telegram: `Ты — SMM-специалист, ведёшь Telegram-канал врача-невролога Гурьяновой В.А.
+Напиши пост на заданную тему.
+Требования:
+- Объём: 300–500 слов
+- Цепляющее начало (задай вопрос или назови цифру)
+- Используй 1–2 эмодзи, но не переборщи
+- Короткие абзацы (1–3 предложения)
+- Призыв к действию в конце: запись на приём, вопрос в комментариях
+- Хэштеги в конце: #невролог #здоровье + 1–2 тематических
+- Выводи только текст поста`,
 
-export async function POST(request: NextRequest) {
+  seo: `Ты — SEO-оптимизатор, пишешь текст для посадочной страницы услуги врача-невролога Гурьяновой В.А.
+Напиши SEO-описание услуги.
+Требования:
+- Объём: 500–800 слов
+- Естественное включение ключевых слов (не спамь)
+- Структура: H1-заголовок, 2–3 секции с H2, список преимуществ (3–5 пунктов), призыв к действию
+- Упомяни: опыт врача, индивидуальный подход, запись по телефону/онлайн
+- Выводи только текст страницы`,
+};
+
+export async function POST(req: NextRequest) {
   try {
-    const body: GenerateRequest = await request.json();
+    const body = await req.json();
+    const { topic, template = 'blog' } = body;
 
-    if (!body.type || !ALLOWED_TYPES.includes(body.type)) {
+    if (!topic || typeof topic !== 'string') {
       return NextResponse.json(
-        { error: `type должен быть одним из: ${ALLOWED_TYPES.join(", ")}` },
+        { error: 'Поле topic обязательно' },
         { status: 400 }
       );
     }
 
-    if (!body.topic || body.topic.trim().length < 3) {
-      return NextResponse.json(
-        { error: "topic обязателен (минимум 3 символа)" },
-        { status: 400 }
-      );
-    }
+    const systemPrompt = SYSTEM_PROMPTS[template] || SYSTEM_PROMPTS.blog;
 
-    let result: { content: string; meta?: Record<string, string> } = { content: "" };
-
-    switch (body.type) {
-      case "article": {
-        if (!body.abstract || body.abstract.trim().length < 50) {
-          return NextResponse.json(
-            { error: "abstract обязателен для type=article (минимум 50 символов)" },
-            { status: 400 }
-          );
-        }
-        const content = await generateArticleFromAbstract(body.abstract, body.topic);
-        result = { content };
-        break;
-      }
-
-      case "telegram": {
-        if (!body.articleText || body.articleText.trim().length < 100) {
-          return NextResponse.json(
-            { error: "articleText обязателен для type=telegram (минимум 100 символов)" },
-            { status: 400 }
-          );
-        }
-        const content = await generateTelegramPost(body.articleText);
-        result = { content };
-        break;
-      }
-
-      case "seo": {
-        if (!body.articleText || body.articleText.trim().length < 100) {
-          return NextResponse.json(
-            { error: "articleText обязателен для type=seo (минимум 100 символов)" },
-            { status: 400 }
-          );
-        }
-        const meta = await generateSEOMeta(body.articleText, body.topic);
-        result = { content: "SEO-мета сгенерированы", meta };
-        break;
-      }
-    }
+    const result = await generateWithGigaChat({
+      systemPrompt,
+      userPrompt: `Тема: ${topic}`,
+    });
 
     return NextResponse.json({
       success: true,
-      type: body.type,
-      topic: body.topic,
-      ...result,
+      template,
+      content: result,
     });
-  } catch (error) {
-    console.error("[GigaChat API Error]", error);
+  } catch (error: any) {
+    console.error('Generate error:', error);
     return NextResponse.json(
-      {
-        error: "Ошибка генерации контента",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: error.message || 'Ошибка генерации' },
       { status: 500 }
     );
   }
