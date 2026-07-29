@@ -1,136 +1,168 @@
-// src/lib/gigachat.ts — клиент для GigaChat API
-// Поддержка: авторизация, автообновление токена, генерация контента
+// src/lib/gigachat.ts
+// Клиент для GigaChat API (Sber)
+// ВАЖНО: Sber выдаёт ID и Secret в перепутанном порядке.
+// Для Basic Auth: decoded_secret (как username) : id (как password)
 
-interface GigaChatToken {
-  access_token: string;
-  expires_at: number;
+import https from "https";
+
+function httpsRequest(options: https.RequestOptions, body?: string): Promise<{ status: number; data: any }> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          resolve({ status: res.statusCode || 0, data: data ? JSON.parse(data) : null });
+        } catch {
+          resolve({ status: res.statusCode || 0, data: data });
+        }
+      });
+    });
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
 }
 
-interface GenerateOptions {
+async function getAccessToken(): Promise<string> {
+  const clientId = process.env.GIGACHAT_CLIENT_ID;
+  const clientSecretRaw = process.env.GIGACHAT_CLIENT_SECRET;
+
+  if (!clientId || !clientSecretRaw) {
+    throw new Error("GIGACHAT_CLIENT_ID или GIGACHAT_CLIENT_SECRET не заданы");
+  }
+
+  const clientSecretDecoded = Buffer.from(clientSecretRaw, "base64").toString("utf8");
+  const credentials = Buffer.from(`${clientSecretDecoded}:${clientId}`).toString("base64");
+
+  const { status, data } = await httpsRequest(
+    {
+      hostname: "ngw.devices.sberbank.ru",
+      port: 9443,
+      path: "/api/v2/oauth",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        Authorization: `Basic ${credentials}`,
+        RqUID: crypto.randomUUID(),
+      },
+      rejectUnauthorized: false,
+    },
+    new URLSearchParams({ scope: process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS" }).toString()
+  );
+
+  if (status !== 200) {
+    throw new Error(`GigaChat auth error: ${status} ${JSON.stringify(data)}`);
+  }
+
+  return data.access_token;
+}
+
+export async function chatCompletion(options: {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+}) {
+  const token = await getAccessToken();
+
+  const response = await fetch("https://gigachat.devices.sberbank.ru/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      model: options.model || "GigaChat:latest",
+      messages: options.messages,
+      temperature: options.temperature ?? 0.3,
+      max_tokens: options.max_tokens ?? 2048,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`GigaChat API error: ${response.status} ${text}`);
+  }
+
+  return response.json();
 }
 
-export class GigaChatClient {
-  private clientId: string;
-  private clientSecret: string;
-  private scope: string;
-  private token: GigaChatToken | null = null;
-  private baseUrl = "https://gigachat.devices.sberbank.ru/api/v1";
-  private authUrl = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth";
-
-  constructor() {
-    this.clientId = process.env.GIGACHAT_CLIENT_ID || "";
-    this.clientSecret = process.env.GIGACHAT_CLIENT_SECRET || "";
-    this.scope = process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS";
-
-    if (!this.clientId || !this.clientSecret) {
-      throw new Error("GIGACHAT_CLIENT_ID and GIGACHAT_CLIENT_SECRET required");
-    }
-  }
-
-  private async getToken(): Promise<string> {
-    if (this.token && Date.now() < this.token.expires_at - 60000) {
-      return this.token.access_token;
-    }
-
-    const authString = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64");
-
-    const response = await fetch(this.authUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${authString}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json",
-        "RqUID": crypto.randomUUID(),
+export async function generateArticleFromAbstract(abstract: string, topic: string): Promise<string> {
+  const result = await chatCompletion({
+    messages: [
+      {
+        role: "system",
+        content: `Ты — медицинский редактор сайта doctorguryanova.ru.
+Врач: Гурьянова Валентина Андреевна, невролог, нутрициолог, рефлексотерапевт, 49 лет практики.`,
       },
-      body: new URLSearchParams({ scope: this.scope }),
-    });
+      {
+        role: "user",
+        content: `Прочитай abstract и напиши обзор для пациентов на русском.
 
-    if (!response.ok) {
-      throw new Error(`GigaChat auth failed: ${response.status} ${await response.text()}`);
-    }
-
-    const data = await response.json();
-    this.token = {
-      access_token: data.access_token,
-      expires_at: Date.now() + (data.expires_at * 1000 || 30 * 60 * 1000),
-    };
-
-    return this.token.access_token;
-  }
-
-  async generate(prompt: string, options: GenerateOptions = {}): Promise<string> {
-    const token = await this.getToken();
-
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify({
-        model: options.model || "GigaChat",
-        messages: [
-          { role: "system", content: "Ты — помощник врача-невролога. Пишешь только образовательный контент, не диагностируешь, не назначаешь лечение. Всегда добавляешь дисклеймер." },
-          { role: "user", content: prompt },
-        ],
-        temperature: options.temperature ?? 0.7,
-        max_tokens: options.max_tokens ?? 2000,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`GigaChat generate failed: ${response.status} ${await response.text()}`);
-    }
-
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "";
-  }
-
-  async generateContent(type: "article" | "telegram_post" | "meta" | "faq", topic: string): Promise<string> {
-    const prompts: Record<string, string> = {
-      article: `Ты — эксперт-невролог с 49-летним стажем, выпускница 1-го МГМУ им. Сеченова.
-Напиши SEO-статью на тему "${topic}" для сайта doctorguryanova.ru.
-
-Требования:
-- Объём: 1500-2000 слов
-- Структура: H2 заголовки, маркированные списки, жирный текст
-- Ключевые слова: невролог, онлайн консультация, ${topic}
-- Тон: профессиональный, но доступный пациенту
-- В конце: призыв записаться на консультацию + телефон + сайт
-- Дисклеймер: "Информация носит образовательный характер и не является медицинской услугой"
-- НЕ диагностируй, НЕ назначай лечение — только образовательная информация`,
-
-      telegram_post: `Напиши пост для Telegram-канала врача-невролога Гурьяновой В.А.
 Тема: ${topic}
 
-Формат:
-- 1 короткий вводный абзац (хук)
-- 3-5 практических советов
-- Призыв к действию (запись на консультацию)
-- Эмодзи, короткие предложения
-- Не более 1500 символов
-- Хэштеги: #невролог #здоровье`,
+Инструкции:
+1. НЕ копируй текст оригинала. Перескажи своими словами.
+2. Структура: заголовок, о чём исследование, метод, результаты, ограничения, что значит для пациентов, ссылка на оригинал.
+3. Объём: 400-600 слов.
+4. Дисклеймер в конце.
 
-      meta: `Напиши meta description (150-160 символов) для страницы "${topic}".
-Включи: невролог, онлайн консультация, ${topic}.
-Призыв к действию в конце.`,
+Abstract:
+${abstract}`,
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: 2500,
+  });
 
-      faq: `Напиши вопрос и ответ FAQ на тему "${topic}" для сайта невролога.
-Вопрос должен быть естественным (как задаёт пациент).
-Ответ — профессиональный, но доступный, 100-150 слов.
-В конце дисклеймер: "Консультация врача необходима для постановки диагноза."`,
-    };
-
-    return this.generate(prompts[type], {
-      model: type === "article" ? "GigaChat-Pro" : "GigaChat",
-      max_tokens: type === "article" ? 4000 : 2000,
-    });
-  }
+  return result.choices[0]?.message?.content ?? "";
 }
 
-export const gigachat = new GigaChatClient();
-export default GigaChatClient;
+export async function generateTelegramPost(articleText: string): Promise<string> {
+  const result = await chatCompletion({
+    messages: [
+      { role: "system", content: "Ты — SMM-редактор медицинского Telegram-канала." },
+      {
+        role: "user",
+        content: `Напиши пост для Telegram (макс. 800 символов) на основе статьи:\n\n${articleText.slice(0, 2000)}`,
+      },
+    ],
+    temperature: 0.5,
+    max_tokens: 800,
+  });
+
+  return result.choices[0]?.message?.content ?? "";
+}
+
+export async function generateSEOMeta(articleText: string, topic: string) {
+  const result = await chatCompletion({
+    messages: [
+      { role: "system", content: "Ты — SEO-специалист." },
+      {
+        role: "user",
+        content: `Для статьи "${topic}" сгенерируй:
+1. Title (50-60 символов)
+2. Meta description (150-160)
+3. Ключевые слова (10-15)
+
+Статья: ${articleText.slice(0, 1500)}`,
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: 500,
+  });
+
+  const text = result.choices[0]?.message?.content ?? "";
+  const titleMatch = text.match(/Title:\s*(.+)/i);
+  const descMatch = text.match(/Description:\s*(.+)/i);
+  const kwMatch = text.match(/Keywords?:\s*(.+)/i);
+
+  return {
+    title: titleMatch?.[1]?.trim() ?? topic,
+    description: descMatch?.[1]?.trim() ?? `Статья о ${topic}`,
+    keywords: kwMatch?.[1]?.trim() ?? topic,
+  };
+}
