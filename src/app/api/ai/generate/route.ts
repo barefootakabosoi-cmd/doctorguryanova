@@ -1,53 +1,91 @@
-// src/app/api/ai/generate/route.ts
-// API для генерации контента через ИИ
-// Ленивая инициализация — клиент создаётся только при вызове
-
 import { NextRequest, NextResponse } from "next/server";
-import GigaChatClient from "@/lib/gigachat";
+import {
+  generateArticleFromAbstract,
+  generateTelegramPost,
+  generateSEOMeta,
+} from "@/lib/gigachat";
 
-// Ленивый клиент — создаётся только при первом вызове
-let gigachatClient: GigaChatClient | null = null;
+const ALLOWED_TYPES = ["article", "telegram", "seo"] as const;
+type GenerateType = (typeof ALLOWED_TYPES)[number];
 
-function getClient(): GigaChatClient {
-  if (!gigachatClient) {
-    gigachatClient = new GigaChatClient();
-  }
-  return gigachatClient;
+interface GenerateRequest {
+  type: GenerateType;
+  abstract?: string;
+  topic: string;
+  articleText?: string;
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const { type, topic } = await req.json();
+    const body: GenerateRequest = await request.json();
 
-    if (!type || !topic) {
+    if (!body.type || !ALLOWED_TYPES.includes(body.type)) {
       return NextResponse.json(
-        { error: "Missing required fields: type, topic" },
+        { error: `type должен быть одним из: ${ALLOWED_TYPES.join(", ")}` },
         { status: 400 }
       );
     }
 
-    const validTypes = ["article", "telegram_post", "meta", "faq"];
-    if (!validTypes.includes(type)) {
+    if (!body.topic || body.topic.trim().length < 3) {
       return NextResponse.json(
-        { error: `Invalid type. Must be one of: ${validTypes.join(", ")}` },
+        { error: "topic обязателен (минимум 3 символа)" },
         { status: 400 }
       );
     }
 
-    const client = getClient();
-    const content = await client.generateContent(type as any, topic);
+    let result: { content: string; meta?: Record<string, string> } = { content: "" };
+
+    switch (body.type) {
+      case "article": {
+        if (!body.abstract || body.abstract.trim().length < 50) {
+          return NextResponse.json(
+            { error: "abstract обязателен для type=article (минимум 50 символов)" },
+            { status: 400 }
+          );
+        }
+        const content = await generateArticleFromAbstract(body.abstract, body.topic);
+        result = { content };
+        break;
+      }
+
+      case "telegram": {
+        if (!body.articleText || body.articleText.trim().length < 100) {
+          return NextResponse.json(
+            { error: "articleText обязателен для type=telegram (минимум 100 символов)" },
+            { status: 400 }
+          );
+        }
+        const content = await generateTelegramPost(body.articleText);
+        result = { content };
+        break;
+      }
+
+      case "seo": {
+        if (!body.articleText || body.articleText.trim().length < 100) {
+          return NextResponse.json(
+            { error: "articleText обязателен для type=seo (минимум 100 символов)" },
+            { status: 400 }
+          );
+        }
+        const meta = await generateSEOMeta(body.articleText, body.topic);
+        result = { content: "SEO-мета сгенерированы", meta };
+        break;
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      type,
-      topic,
-      content,
-      generatedAt: new Date().toISOString(),
+      type: body.type,
+      topic: body.topic,
+      ...result,
     });
-  } catch (error: any) {
-    console.error("AI generation error:", error);
+  } catch (error) {
+    console.error("[GigaChat API Error]", error);
     return NextResponse.json(
-      { error: error.message || "Generation failed" },
+      {
+        error: "Ошибка генерации контента",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
