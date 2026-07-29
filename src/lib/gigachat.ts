@@ -1,5 +1,5 @@
 // src/lib/gigachat.ts
-// Клиент для GigaChat API (Sber)
+// Клиент для работы с GigaChat API (Sber)
 // ВАЖНО: Sber выдаёт ID и Secret в перепутанном порядке.
 // Для Basic Auth: decoded_secret (как username) : id (как password)
 
