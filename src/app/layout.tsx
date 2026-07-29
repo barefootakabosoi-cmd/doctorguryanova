@@ -1,4 +1,4 @@
-import type { Metadata } from "next"
+3import type { Metadata } from "next"
 import "./globals.css"
 import CookieBanner from "@/components/CookieBanner"
 
@@ -61,6 +61,7 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <head>
+        <meta name="yandex-verification" content="4d3ba462f450909b" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
