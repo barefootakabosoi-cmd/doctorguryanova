@@ -132,5 +132,4 @@ export class GigaChatClient {
   }
 }
 
-export const gigachat = new GigaChatClient();
 export default GigaChatClient;
