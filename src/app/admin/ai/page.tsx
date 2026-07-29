@@ -111,7 +111,7 @@ export default function AiAdminPage() {
 
   const clearHistory = () => {
     if (!confirm('Очистить всю историю?')) return;
-    setHistory([]);
+      setHistory([]);
     localStorage.removeItem('gigachat-history');
   };
 
@@ -225,7 +225,7 @@ export default function AiAdminPage() {
                   </div>
                   <button
                     onClick={(e) => {
-n                      e.stopPropagation();
+                      e.stopPropagation();
                       deleteHistoryItem(item.id);
                     }}
                     className="text-gray-400 hover:text-red-600 px-2"
