@@ -7,12 +7,12 @@ interface GigaChatToken {
 }
 
 interface GenerateOptions {
-  model?: string;      // GigaChat | GigaChat-Pro | GigaChat-Max
+  model?: string;
   temperature?: number;
   max_tokens?: number;
 }
 
-class GigaChatClient {
+export class GigaChatClient {
   private clientId: string;
   private clientSecret: string;
   private scope: string;
@@ -30,7 +30,6 @@ class GigaChatClient {
     }
   }
 
-  // Получение/обновление токена (живёт 30 минут)
   private async getToken(): Promise<string> {
     if (this.token && Date.now() < this.token.expires_at - 60000) {
       return this.token.access_token;
@@ -62,7 +61,6 @@ class GigaChatClient {
     return this.token.access_token;
   }
 
-  // Генерация текста
   async generate(prompt: string, options: GenerateOptions = {}): Promise<string> {
     const token = await this.getToken();
 
@@ -92,7 +90,6 @@ class GigaChatClient {
     return data.choices?.[0]?.message?.content || "";
   }
 
-  // Генерация с учётом типа контента
   async generateContent(type: "article" | "telegram_post" | "meta" | "faq", topic: string): Promise<string> {
     const prompts: Record<string, string> = {
       article: `Ты — эксперт-невролог с 49-летним стажем, выпускница 1-го МГМУ им. Сеченова.
