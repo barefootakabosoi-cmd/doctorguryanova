@@ -1,10 +1,19 @@
 // src/app/api/ai/generate/route.ts
 // API для генерации контента через ИИ
-// POST /api/ai/generate
-// Body: { type: "article" | "telegram_post" | "meta" | "faq", topic: string }
+// Ленивая инициализация — клиент создаётся только при вызове
 
 import { NextRequest, NextResponse } from "next/server";
-import { gigachat } from "@/lib/gigachat";
+import GigaChatClient from "@/lib/gigachat";
+
+// Ленивый клиент — создаётся только при первом вызове
+let gigachatClient: GigaChatClient | null = null;
+
+function getClient(): GigaChatClient {
+  if (!gigachatClient) {
+    gigachatClient = new GigaChatClient();
+  }
+  return gigachatClient;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,7 +34,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const content = await gigachat.generateContent(type as any, topic);
+    const client = getClient();
+    const content = await client.generateContent(type as any, topic);
 
     return NextResponse.json({
       success: true,
