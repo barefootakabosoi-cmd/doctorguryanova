@@ -1,4 +1,6 @@
-'use client';
+import os
+
+page = """'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 
@@ -242,3 +244,18 @@ export default function AiAdminPage() {
     </div>
   );
 }
+"""
+
+path = os.path.expanduser('~/Projects/doctorguryanova-site/src/app/admin/ai/page.tsx')
+os.makedirs(os.path.dirname(path), exist_ok=True)
+
+with open(path, 'w') as f:
+    f.write(page)
+
+print(f"✅ page.tsx записан: {len(page)} символов")
+
+import subprocess
+subprocess.run(['git', '-C', os.path.dirname(path) + '/../../..', 'add', 'src/app/admin/ai/page.tsx'])
+subprocess.run(['git', '-C', os.path.dirname(path) + '/../../..', 'commit', '-m', 'fix: restore admin page from python script'])
+subprocess.run(['git', '-C', os.path.dirname(path) + '/../../..', 'push'])
+print("✅ Запушено на GitHub")
