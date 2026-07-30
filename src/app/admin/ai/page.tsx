@@ -1,6 +1,7 @@
 'use client';
 
 export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useCallback } from 'react';
 
 type Template = 'blog' | 'telegram' | 'seo';
@@ -232,7 +233,7 @@ export default function AiAdminPage() {
                     className="text-gray-400 hover:text-red-600 px-2"
                     title="Удалить"
                   >
-                    🗑
+                    🗑️
                   </button>
                 </div>
               ))}
@@ -243,4 +244,3 @@ export default function AiAdminPage() {
     </div>
   );
 }
-// v3-fixed
