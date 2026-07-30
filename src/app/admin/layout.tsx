@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Админка — Генератор контента",
+  title: "Админка - Генератор контента",
 };
 
 export default function AdminLayout({
@@ -9,9 +9,5 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <html lang="ru">
-      <body className="bg-white text-gray-900">{children}</body>
-    </html>
-  );
+  return <div className="min-h-screen bg-gray-50">{children}</div>;
 }

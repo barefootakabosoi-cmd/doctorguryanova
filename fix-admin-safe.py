@@ -1,4 +1,51 @@
-'use client';
+#!/usr/bin/env python3
+# fix-admin-safe.py - bezopasno dobavlyaet adminku v src/app/admin/
+# - layout.tsx bez <html>/<body>
+# - page.tsx s pravilnym JSX
+# - middleware.ts s atob() dlya Edge Runtime
+
+import os
+import subprocess
+import sys
+
+def run(cmd, check=True):
+    print(f"$ {cmd}")
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    if check and result.returncode != 0:
+        print(f"❌ Ошибка: код {result.returncode}")
+        sys.exit(1)
+    return result
+
+def main():
+    if not os.path.isdir(".git"):
+        print("❌ Запускай из корня репозитория doctorguryanova")
+        sys.exit(1)
+
+    os.makedirs("src/app/admin/ai", exist_ok=True)
+
+    layout = """import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Админка - Генератор контента",
+};
+
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <div className="min-h-screen bg-gray-50">{children}</div>;
+}
+"""
+    with open("src/app/admin/layout.tsx", "w", encoding="utf-8") as f:
+        f.write(layout)
+    print("✅ src/app/admin/layout.tsx")
+
+    page = """'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 
@@ -242,3 +289,59 @@ export default function AiAdminPage() {
     </div>
   );
 }
+"""
+    with open("src/app/admin/ai/page.tsx", "w", encoding="utf-8") as f:
+        f.write(page)
+    print("✅ src/app/admin/ai/page.tsx")
+
+    middleware = """import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(req: NextRequest) {
+  if (req.nextUrl.pathname.startsWith('/admin')) {
+    const auth = req.headers.get('authorization');
+
+    if (!auth) {
+      return new NextResponse('Authentication required', {
+        status: 401,
+        headers: { 'WWW-Authenticate': 'Basic realm="Admin"' },
+      });
+    }
+
+    const [scheme, encoded] = auth.split(' ');
+    if (scheme !== 'Basic' || !encoded) {
+      return new NextResponse('Invalid auth', { status: 401 });
+    }
+
+    const decoded = atob(encoded);
+    const [user, pass] = decoded.split(':');
+
+    const adminUser = process.env.ADMIN_USER || 'admin';
+    const adminPass = process.env.ADMIN_PASS || 'changeme';
+
+    if (user !== adminUser || pass !== adminPass) {
+      return new NextResponse('Invalid credentials', { status: 401 });
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/admin/:path*'],
+};
+"""
+    with open("src/middleware.ts", "w", encoding="utf-8") as f:
+        f.write(middleware)
+    print("✅ src/middleware.ts (atob dlya Edge Runtime)")
+
+    run("git add -A")
+    run('git commit -m "fix(admin): safe admin layout + page + middleware with atob"')
+    run("git push origin main")
+
+    print("\n🚀 Gotovo! Teper zaydi v Vercel Dashboard → Redeploy (snimi galochku Use existing Build Cache)")
+    print("\n⚠️  Prover snachala glavnuyu stranitsu doctorguryanova.ru - ona dolzhna rabotat.")
+    print("   Potom prover /admin/ai (login: admin / changeme)")
+
+if __name__ == "__main__":
+    main()

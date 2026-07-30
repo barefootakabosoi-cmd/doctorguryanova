@@ -17,7 +17,7 @@ export function middleware(req: NextRequest) {
       return new NextResponse('Invalid auth', { status: 401 });
     }
 
-    const decoded = Buffer.from(encoded, 'base64').toString('utf-8');
+    const decoded = atob(encoded);
     const [user, pass] = decoded.split(':');
 
     const adminUser = process.env.ADMIN_USER || 'admin';
