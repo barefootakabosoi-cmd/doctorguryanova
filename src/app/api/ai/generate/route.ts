@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         { role: 'user', content: `Тема: ${topic}` },
       ],
       temperature: 0.3,
-      max_tokens: 2500,
+      max_tokens: 800,
     });
 
     const content = result.choices[0]?.message?.content ?? '';
