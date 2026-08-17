@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 
 function generateJitsiLink(bookingId: string) {
-  const room = `guryanova-${bookingId}-${Date.now().toString(36)}`
+  const room = `guryanova-${bookingId}`
   return `https://meet.jit.si/${room}#config.prejoinPageEnabled=false&config.startWithAudioMuted=true`
 }
 
@@ -21,21 +21,25 @@ export async function POST(request: NextRequest) {
 
       const jitsiLink = generateJitsiLink(bookingId)
 
-      // 1. Telegram: красивое сообщение врачу
+      // 1. Telegram: понятная инструкция для врача
       const botToken = process.env.TELEGRAM_BOT_TOKEN
       const chatId = process.env.TELEGRAM_CHAT_ID
       if (botToken && chatId) {
-        const msg = `<b>✅ Оплата получена</b>
+        const msg = `<b>✅ ОПЛАТА ПОЛУЧЕНА</b>
 
 💰 <b>Сумма:</b> ${amount} ₽
-👤 <b>Пациент:</b> ${description}
-📧 <b>Email:</b> ${patientEmail}
-🆔 <b>Бронь:</b> <code>${bookingId}</code>
-💳 <b>Платёж:</b> <code>${paymentId}</code>
+👤 <b>Услуга:</b> ${description}
+📧 <b>Почта пациента:</b> ${patientEmail}
+🆔 <b>ID брони:</b> <code>${bookingId}</code>
 
-🔗 <a href="${jitsiLink}"><b>ССЫЛКА НА КОНСУЛЬТАЦИЮ</b></a>
+<b>🔽 ВАШИ ДЕЙСТВИЯ:</b>
+1️⃣ Сохраните эту ссылку
+2️⃣ За 10 минут до приёма отправьте ссылку пациенту (WhatsApp / Telegram / Email)
+3️⃣ Нажмите на ссылку сами, чтобы войти в комнату как врач
 
-<i>Отправьте ссылку пациенту за 10 минут до начала</i>`
+🔗 <a href="${jitsiLink}"><b>ОТКРЫТЬ КОНСУЛЬТАЦИЮ</b></a>
+
+<i>⚠️ Комната активна 24 часа. Не передавайте ссылку третьим лицам.</i>`
 
         const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST",
@@ -99,10 +103,10 @@ export async function POST(request: NextRequest) {
           console.error("Email send failed:", emailErr)
         }
       } else {
-        console.warn("SMTP not configured or email missing, skipping emails")
+        console.warn("SMTP not configured or email missing, skipping patient email")
       }
 
-      // 3. Email врачу (если SMTP настроен)
+      // 3. Email врачу (дубль для надёжности)
       if (smtpHost && smtpUser && smtpPass) {
         try {
           const nodemailer = await import("nodemailer")
@@ -125,6 +129,8 @@ export async function POST(request: NextRequest) {
               <p>Пациент: ${patientEmail}</p>
               <p>ID: ${bookingId}</p>
               <p><a href="${jitsiLink}">Jitsi-ссылка</a></p>
+              <hr>
+              <p><b>Инструкция:</b> отправьте ссылку пациенту за 10 минут до приёма.</p>
             `,
           })
         } catch (err) {
