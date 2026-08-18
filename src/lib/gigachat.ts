@@ -47,7 +47,6 @@ async function getAccessToken(): Promise<string> {
         Authorization: `Basic ${credentials}`,
         RqUID: crypto.randomUUID(),
       },
-      rejectUnauthorized: false,
     },
     new URLSearchParams({ scope: process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS" }).toString()
   );
@@ -74,7 +73,6 @@ async function chatRequest(token: string, body: object): Promise<any> {
         Authorization: `Bearer ${token}`,
         "Content-Length": Buffer.byteLength(payload),
       },
-      rejectUnauthorized: false,
     },
     payload
   );

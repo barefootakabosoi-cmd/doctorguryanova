@@ -7,6 +7,23 @@ function generateJitsiLink(bookingId: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Проверка подписи ЮKassa (Basic Auth: shopId:secretKey)
+    // В тестовом режиме проверку пропускаем
+    if (process.env.TEST_MODE !== "true") {
+      const auth = request.headers.get("authorization") || ""
+      if (!auth.startsWith("Basic ")) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 })
+      }
+      const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8")
+      const [shopId, secretKey] = decoded.split(":")
+      const expectedShopId = process.env.YOOKASSA_SHOP_ID
+      const expectedSecretKey = process.env.YOOKASSA_SECRET_KEY
+      if (!expectedShopId || !expectedSecretKey ||
+          shopId !== expectedShopId || secretKey !== expectedSecretKey) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 })
+      }
+    }
+
     const body = await request.json()
     const { event, object } = body
 
@@ -17,11 +34,11 @@ export async function POST(request: NextRequest) {
       const patientEmail = object.metadata?.patient_email || "не указан"
       const description = object.description || "Консультация"
 
-      console.log("Payment succeeded:", { bookingId, paymentId, amount, patientEmail })
+      console.log("Payment succeeded:", { bookingId, paymentId, amount })
 
       const jitsiLink = generateJitsiLink(bookingId)
 
-      // 1. Telegram: понятная инструкция для врача
+      // 1. Telegram
       const botToken = process.env.TELEGRAM_BOT_TOKEN
       const chatId = process.env.TELEGRAM_CHAT_ID
       if (botToken && chatId) {
@@ -34,7 +51,7 @@ export async function POST(request: NextRequest) {
 
 <b>🔽 ВАШИ ДЕЙСТВИЯ:</b>
 1️⃣ Сохраните эту ссылку
-2️⃣ За 10 минут до приёма отправьте ссылку пациенту (WhatsApp / Telegram / Email)
+2️⃣ За 10 минут до приёма отправьте ссылку пациенту
 3️⃣ Нажмите на ссылку сами, чтобы войти в комнату как врач
 
 🔗 <a href="${jitsiLink}"><b>ОТКРЫТЬ КОНСУЛЬТАЦИЮ</b></a>
@@ -44,34 +61,26 @@ export async function POST(request: NextRequest) {
         const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: msg,
-            parse_mode: "HTML",
-            disable_web_page_preview: true,
-          }),
+          body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "HTML", disable_web_page_preview: true }),
         })
-
         if (!tgRes.ok) {
           console.error("Telegram send failed:", await tgRes.text())
         }
       }
 
-      // 2. Email пациенту (если SMTP настроен)
+      // 2. Email пациенту
       const smtpHost = process.env.SMTP_HOST
       const smtpUser = process.env.SMTP_USER
       const smtpPass = process.env.SMTP_PASS
-
       if (smtpHost && smtpUser && smtpPass && patientEmail && patientEmail !== "не указан") {
         try {
           const nodemailer = await import("nodemailer")
           const transporter = nodemailer.createTransport({
             host: smtpHost,
             port: Number(process.env.SMTP_PORT) || 465,
-            secure: true,
+            secure: Number(process.env.SMTP_PORT) === 465,
             auth: { user: smtpUser, pass: smtpPass },
           })
-
           await transporter.sendMail({
             from: `"Гурьянова В.А." <${smtpUser}>`,
             to: patientEmail,
@@ -87,36 +96,32 @@ export async function POST(request: NextRequest) {
                   </a>
                 </div>
                 <p style="color: #666; font-size: 14px;">
-                  Откройте ссылку в <b>Chrome или Firefox</b> за 5 минут до начала.<br>
-                  Разрешите доступ к камере и микрофону при входе.
+                  Откройте ссылку в Chrome или Firefox за 5 минут до начала.<br>
+                  Разрешите доступ к камере и микрофону.
                 </p>
                 <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
                 <p style="color: #999; font-size: 12px;">
                   ID платежа: ${paymentId}<br>
                   По вопросам: <a href="https://t.me/Docguryanovabot">@Docguryanovabot</a>
                 </p>
-              </div>
-            `,
+              </div>`,
           })
           console.log("Email sent to patient:", patientEmail)
         } catch (emailErr) {
           console.error("Email send failed:", emailErr)
         }
-      } else {
-        console.warn("SMTP not configured or email missing, skipping patient email")
       }
 
-      // 3. Email врачу (дубль для надёжности)
+      // 3. Email врачу
       if (smtpHost && smtpUser && smtpPass) {
         try {
           const nodemailer = await import("nodemailer")
           const transporter = nodemailer.createTransport({
             host: smtpHost,
             port: Number(process.env.SMTP_PORT) || 465,
-            secure: true,
+            secure: Number(process.env.SMTP_PORT) === 465,
             auth: { user: smtpUser, pass: smtpPass },
           })
-
           const doctorEmail = process.env.DOCTOR_EMAIL || smtpUser
           await transporter.sendMail({
             from: `"Запись Гурьянова" <${smtpUser}>`,
@@ -130,8 +135,7 @@ export async function POST(request: NextRequest) {
               <p>ID: ${bookingId}</p>
               <p><a href="${jitsiLink}">Jitsi-ссылка</a></p>
               <hr>
-              <p><b>Инструкция:</b> отправьте ссылку пациенту за 10 минут до приёма.</p>
-            `,
+              <p><b>Инструкция:</b> отправьте ссылку пациенту за 10 минут до приёма.</p>`,
           })
         } catch (err) {
           console.error("Doctor email failed:", err)

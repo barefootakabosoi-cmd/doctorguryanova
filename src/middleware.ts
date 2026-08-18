@@ -3,8 +3,18 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(req: NextRequest) {
   if (req.nextUrl.pathname.startsWith('/admin')) {
-    const auth = req.headers.get('authorization');
+    const adminUser = process.env.ADMIN_USER;
+    const adminPass = process.env.ADMIN_PASS;
 
+    if (!adminUser || !adminPass) {
+      console.error('ADMIN_USER/ADMIN_PASS not configured — /admin disabled');
+      return new NextResponse('Admin unavailable: server misconfiguration', {
+        status: 503,
+        headers: { 'Retry-After': '3600' },
+      });
+    }
+
+    const auth = req.headers.get('authorization');
     if (!auth) {
       return new NextResponse('Authentication required', {
         status: 401,
@@ -19,9 +29,6 @@ export function middleware(req: NextRequest) {
 
     const decoded = atob(encoded);
     const [user, pass] = decoded.split(':');
-
-    const adminUser = process.env.ADMIN_USER || 'admin';
-    const adminPass = process.env.ADMIN_PASS || 'changeme';
 
     if (user !== adminUser || pass !== adminPass) {
       return new NextResponse('Invalid credentials', { status: 401 });
