@@ -114,6 +114,11 @@ export default function BookingForm() {
 
       const paymentData = await paymentRes.json()
 
+      // Сохраняем Jitsi-ссылку для success-страницы (TEST_MODE)
+      if (paymentData.jitsiLink) {
+        localStorage.setItem(`jitsi_${bookingId}`, paymentData.jitsiLink)
+      }
+
       if (!paymentRes.ok || !paymentData.paymentUrl) {
         setServerError(paymentData.error || "Ошибка при создании платежа")
         setLoading(false)
