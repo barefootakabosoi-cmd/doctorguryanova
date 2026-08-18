@@ -66,6 +66,13 @@ export default function BookingForm() {
     },
   })
 
+
+  const direction = watch("direction")
+  const date = watch("date")
+  const time = watch("time")
+  const name = watch("name")
+  const phone = watch("phone")
+
   useEffect(() => {
     if (!date) return
     fetch(`/api/booking/slots?date=${date}`)
@@ -73,12 +80,6 @@ export default function BookingForm() {
       .then(data => setBookedSlots(data.slots || []))
       .catch(() => setBookedSlots([]))
   }, [date])
-
-  const direction = watch("direction")
-  const date = watch("date")
-  const time = watch("time")
-  const name = watch("name")
-  const phone = watch("phone")
 
   const handleDirectionChange = (v: string) => {
     setValue("direction", v)
