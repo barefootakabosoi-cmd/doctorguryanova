@@ -74,6 +74,21 @@ export default function BookingForm() {
   const name = watch("name")
   const phone = watch("phone")
 
+  useEffect(() => {
+    if (!date) return
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    fetch(`/api/booking/slots?date=${date}`, { signal: controller.signal })
+      .then(r => r.json())
+      .then(data => setBookedSlots(data.slots || []))
+      .catch(() => setBookedSlots([]))
+      .finally(() => clearTimeout(timeout))
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [date])
+
 
   const handleDirectionChange = (v: string) => {
     setValue("direction", v)
