@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -49,6 +49,7 @@ export default function BookingForm() {
   const [price, setPrice] = useState("")
   const [loading, setLoading] = useState(false)
   const [serverError, setServerError] = useState("")
+  const [bookedSlots, setBookedSlots] = useState<string[]>([])
 
 
   const {
@@ -80,6 +81,7 @@ export default function BookingForm() {
     else setPrice("")
   }
 
+  const availableTimes = times.filter(t => !bookedSlots.includes(t))
   const canProceed = direction && date && time
 
   const onSubmit = async (data: BookingFormData) => {
@@ -191,7 +193,7 @@ export default function BookingForm() {
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 bg-white text-sm"
                   >
                     <option value="">Выберите время</option>
-                    {times.map((t) => (
+                    {availableTimes.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
