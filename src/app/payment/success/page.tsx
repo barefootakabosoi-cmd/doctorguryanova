@@ -52,7 +52,7 @@ function SuccessContent() {
         <p className="text-slate-500 mb-2">
           {noPayment
             ? "Ваша запись создана. Мы свяжемся с вами для уточнения оплаты."
-            : "Запись создана. Подтверждение отправлено в Telegram и на email."}
+            : "Запись создано. Ссылка на видеоконсультацию — ниже на этой странице."}
         </p>
         {paymentId && (
           <p className="text-xs text-slate-400 mb-6 font-mono">ID брони: {paymentId}</p>
@@ -84,8 +84,8 @@ function SuccessContent() {
         {!loading && !jitsiLink && !noPayment && (
           <div className="bg-amber-50 rounded-xl p-5 text-left space-y-3 text-sm mb-6 border border-amber-100">
             <p className="text-amber-800">
-              ⚠️ Ссылка на консультацию будет отправлена вам в SMS или Telegram.
-              Если не получили — напишите нам в Telegram @Docguryanovabot.
+              ⚠️ Ссылка на консультацию доступна выше на этой странице в течение 24 часов.
+              Если не видите — напишите нам в Telegram @Docguryanovabot.
             </p>
           </div>
         )}
