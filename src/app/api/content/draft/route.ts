@@ -40,19 +40,39 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const draftId = req.nextUrl.searchParams.get("draftId");
-  if (!draftId) {
-    return NextResponse.json({ error: "draftId required" }, { status: 400 });
+  try {
+    const draftId = req.nextUrl.searchParams.get("draftId");
+    console.log("[draft] GET draftId:", draftId);
+    
+    if (!draftId) {
+      return NextResponse.json({ error: "draftId required" }, { status: 400 });
+    }
+    
+    if (!process.env.KV_REST_API_URL) {
+      console.log("[draft] KV_REST_API_URL not set");
+      return NextResponse.json({ error: "KV not configured" }, { status: 500 });
+    }
+    
+    const data = await redis.get(draftId);
+    console.log("[draft] redis.get result type:", typeof data, "value:", data ? "exists" : "null");
+    
+    if (!data) {
+      return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+    }
+    
+    // data может быть строкой или уже объектом (Upstash иногда десериализует)
+    let parsed: any;
+    try {
+      parsed = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      console.error("[draft] JSON.parse failed:", e, "data:", data);
+      return NextResponse.json({ error: "Invalid draft data" }, { status: 500 });
+    }
+    
+    console.log("[draft] returning draft, keys:", parsed.post ? Object.keys(parsed.post) : "no post");
+    return NextResponse.json(parsed);
+  } catch (error: any) {
+    console.error("[draft] error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  
-  if (!process.env.KV_REST_API_URL) {
-    return NextResponse.json({ error: "KV not configured" }, { status: 500 });
-  }
-  
-  const data = await redis.get(draftId);
-  if (!data) {
-    return NextResponse.json({ error: "Draft not found" }, { status: 404 });
-  }
-  
-  return NextResponse.json(JSON.parse(data as string));
 }
