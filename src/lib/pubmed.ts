@@ -61,9 +61,10 @@ function parseArticlesXml(xml: string, pmids: string[]): PubMedArticle[] {
     const pubDate = extractTag(articleXml, "PubDate") || "";
     
     const authors: string[] = [];
-    const authorMatches = articleXml.matchAll(/<Author>.*?<LastName>(.*?)<\/LastName>.*?<ForeName>(.*?)<\/ForeName>.*?<\/Author>/gs);
-    for (const m of authorMatches) {
-      authors.push(`${m[2]} ${m[1]}`);
+    const authorRegex = /<Author>[\s\S]*?<LastName>(.*?)<\/LastName>[\s\S]*?<ForeName>(.*?)<\/ForeName>[\s\S]*?<\/Author>/g;
+    let authorMatch;
+    while ((authorMatch = authorRegex.exec(articleXml)) !== null) {
+      authors.push(`${authorMatch[2]} ${authorMatch[1]}`);
     }
     
     articles.push({
