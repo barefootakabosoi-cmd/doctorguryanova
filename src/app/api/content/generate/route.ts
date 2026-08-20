@@ -3,6 +3,7 @@ import { Redis } from "@upstash/redis";
 import { generateArticle, generateArticleByKeyword } from "@/lib/content-pipeline";
 import { getRandomCluster, keywordClusters } from "@/lib/seo-keywords";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
       post: generated.post,
       telegramPost: generated.telegramPost,
       seo: generated.seo,
-      sources: generated.sources.map(s => ({ pmid: s.pmid, title: s.title, url: s.url })),
+      sources: generated.sources.map(s => ({ id: "pmid" in s ? s.pmid : s.doi, title: s.title, url: s.url })),
     });
   } catch (error: any) {
     console.error("[content/generate] error:", error);

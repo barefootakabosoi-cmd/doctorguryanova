@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server"
 
+export const dynamic = "force-dynamic";
+
 function generateJitsiLink(bookingId: string) {
   const room = `guryanova-${bookingId}`
   return `https://meet.jit.si/${room}#config.prejoinPageEnabled=false&config.startWithAudioMuted=true`

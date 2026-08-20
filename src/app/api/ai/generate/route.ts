@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { chatCompletion } from '@/lib/gigachat';
 
+export const dynamic = "force-dynamic";
 export const runtime = 'nodejs';
 
 const SYSTEM_PROMPTS: Record<string, string> = {
