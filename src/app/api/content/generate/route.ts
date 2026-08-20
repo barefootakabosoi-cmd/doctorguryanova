@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const generated = await generateArticle(generatedTopic, cluster);
 
     // Сохраняем черновик в KV
-    const draftId = `draft:${Date.now()}`;
+    const draftId = `draft-${Date.now()}`;
     if (process.env.KV_REST_API_URL) {
       await redis.set(draftId, JSON.stringify(generated), { ex: 86400 * 7 }); // 7 дней
       console.log("[content/generate] Черновик сохранён:", draftId);
@@ -66,8 +66,9 @@ export async function POST(req: NextRequest) {
           disable_web_page_preview: true,
           reply_markup: {
             inline_keyboard: [
-              [{ text: "✅ Опубликовать", callback_data: `publish:${draftId}` }],
-              [{ text: "❌ Отклонить", callback_data: `reject:${draftId}` }],
+              [{ text: "✅ Опубликовать", callback_data: `publish|${draftId}` }],
+              [{ text: "📝 Открыть редактор", url: `https://doctorguryanova.ru/admin/content/${draftId}` }],
+              [{ text: "❌ Отклонить", callback_data: `reject|${draftId}` }],
             ],
           },
         }),

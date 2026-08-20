@@ -1,7 +1,7 @@
 // src/lib/content-pipeline.ts
 // Pipeline: PubMed → GigaChat → готовый контент
 
-import { getPubMedArticles, type PubMedArticle } from "./pubmed";
+import { getPubMedArticles, type PubMedArticle } from "./pubmed";\nimport { searchCrossRef, type CrossRefArticle } from "./crossref";
 import { chatCompletion } from "./gigachat";
 import { getClusterByKeyword, type KeywordCluster } from "./seo-keywords";
 import type { BlogPost } from "./blog-data";
@@ -100,7 +100,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   console.log(`[pipeline] PubMed: ${articles.length} уникальных статей`);
   
   // 2. GigaChat — статья от врача
-  const abstractsText = articles.length > 0
+  const abstractsText = allArticles.length > 0
     ? articles.map((a, i) => `--- Источник ${i + 1} (PMID: ${a.pmid}) ---\nЗаголовок: ${a.title}\nЖурнал: ${a.journal}, ${a.pubDate}\nAbstract: ${a.abstract}`).join("\n\n")
     : "Научные статьи не найдены. Пиши на основе клинического опыта и общепринятых медицинских знаний.";
   
@@ -210,18 +210,18 @@ KEYWORDS: ...` },
     excerpt,
     content: content + generateSourcesBlock(articles),
     keywords,
-    type: articles.length > 0 ? "research" : "seo",
+    type: allArticles.length > 0 ? "research" : "seo",
     publishedAt: now,
     updatedAt: now,
     readTime: calculateReadTime(content),
   };
   
-  return { post, telegramPost, seo: { title, description: excerpt, keywords: keywords.join(", ") }, sources: articles };
+  return { post, telegramPost, seo: { title, description: excerpt, keywords: keywords.join(", ") }, sources: allArticles };
 }
 
 function generateSourcesBlock(articles: PubMedArticle[]): string {
-  if (articles.length === 0) return "";
-  const sources = articles.map(a => 
+  if (allArticles.length === 0) return "";
+  const sources = allArticles.map(a => 
     `<li><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a> — ${a.journal}, ${a.pubDate}</li>`
   ).join("");
   return `\n<h2>Источники</h2>\n<ul>${sources}</ul>`;

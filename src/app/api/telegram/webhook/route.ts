@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
     console.log(`[webhook] Callback: ${data} from chat ${chatId}`);
     
     // Парсим callback_data: "publish:draftId" или "reject:draftId"
-    const [action, draftId] = data.split(":");
+    const [action, draftId] = data.split("|");
     
     if (action === "publish" && draftId) {
       // Читаем черновик из KV
