@@ -109,7 +109,7 @@ KEYWORDS: ...` },
   
   const title = titleMatch?.[1]?.trim() || topic;
   const excerpt = descMatch?.[1]?.trim() || `Статья о ${topic.toLowerCase()}`;
-  const keywords = kwMatch?.[1]?.split(/[,;]/).map(k => k.trim()).filter(Boolean).slice(0, 7) || [topic];
+  const keywords = kwMatch?.[1]?.split(/[,;]/).map((k: string) => k.trim()).filter(Boolean).slice(0, 7) || [topic];
   
   // 4. GigaChat: генерируем пост для Telegram
   const tgResult = await chatCompletion({
