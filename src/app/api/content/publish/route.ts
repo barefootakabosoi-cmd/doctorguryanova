@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     console.log("[publish] slug:", slug);
 
     const postKey = `post:${slug}`;
-    await redis.set(postKey, JSON.stringify(post), { ex: 0 });
+    await redis.set(postKey, JSON.stringify(post));
     console.log("[publish] saved:", postKey);
 
     const indexRaw = await redis.get("posts:index");
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(index)) index = [];
     if (!index.includes(slug)) {
       index.push(slug);
-      await redis.set("posts:index", JSON.stringify(index), { ex: 0 });
+      await redis.set("posts:index", JSON.stringify(index));
       console.log("[publish] index updated:", index.length);
     }
 
