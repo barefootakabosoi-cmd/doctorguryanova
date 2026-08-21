@@ -111,7 +111,7 @@ export default function RootLayout({
           `}
         </Script>
       )}
-      <noscript><div><img src="https://mc.yandex.ru/watch/${process.env.NEXT_PUBLIC_YANDEX_METRIKA_ID}" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+      <noscript><div><img src="https://mc.yandex.ru/watch/${process.env.NEXT_PUBLIC_YANDEX_METRIKA_ID}" style={{ position: "absolute", left: "-9999px" }} alt="" /></div></noscript>
       </head>
       <body className="antialiased text-slate-900 bg-white">
         {children}
