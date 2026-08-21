@@ -1,42 +1,33 @@
-import type { Metadata } from "next"
-import Navbar from "@/components/Navbar"
-import Footer from "@/components/Footer"
+import { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Остеопатия в Москве — Гурьянова Валентина Андреевна",
-  description: "Остеопатия — мягкое ручное воздействие на костно-мышечную систему. Лечение головных болей, болей в спине, восстановление после травм. Запись онлайн.",
-  keywords: "остеопатия москва, остеопат, лечение остеопатией, краниальная остеопатия, остеопатия позвоночника",
-  alternates: { canonical: "https://doctorguryanova.ru/osteopatiya/" },
-}
+  title: 'Остеопатия',
+  description: 'Консультация остеопата онлайн. Лечение болей в спине, шее, суставах мягкими техниками. Опытный врач-невролог, остеопат. Запись на консультацию.',
+  openGraph: {
+    title: 'Остеопатия',
+    description: 'Консультация остеопата онлайн. Лечение болей в спине, шее, суставах мягкими техниками. Опытный врач-невролог, остеопат. Запись на консультацию.',
+  },
+};
 
-export default function OsteopatiyaPage() {
+export const dynamic = "force-dynamic";
+
+export default function Page() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-teal-50/30">
-      <Navbar />
-      <div className="max-w-3xl mx-auto px-6 pt-20 pb-16">
-        <p className="text-xs font-semibold text-teal-600 uppercase tracking-widest mb-3">Направление</p>
-        <h1 className="text-4xl font-bold text-slate-900 mb-6">Остеопатия</h1>
-        <div className="prose prose-slate max-w-none">
-          <p className="text-lg text-slate-600 leading-relaxed mb-6">
-            Остеопатия — методика мягкого ручного воздействия, направленная на восстановление подвижности тканей и органов. В отличие от мануальной терапии, остеопатия работает с мягкими тканями, фасциями, внутренними органами.
-          </p>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Показания</h2>
-          <ul className="space-y-2 text-slate-600">
-            <li>• Головные боли и мигрени</li>
-            <li>• Боли в спине, шее, пояснице хронические</li>
-            <li>• Последствия травм и операций</li>
-            <li>• Нарушения сна, хроническая усталость</li>
-            <li>• Детская остеопатия (кривошея, плоскостопие)</li>
-          </ul>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Стоимость</h2>
-          <p className="text-2xl font-bold text-teal-700 mb-2">4 200 ₽</p>
-          <p className="text-sm text-slate-500 mb-8">Сеанс остеопатии, 60 минут</p>
-          <a href="/#booking" className="inline-block bg-slate-900 text-white px-7 py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all duration-300 shadow-lg shadow-slate-900/10">
+    <main className="max-w-4xl mx-auto px-4 py-12">
+      <article className="prose prose-slate max-w-none">
+        <h1 className="text-3xl font-bold text-slate-900 mb-6">Остеопатия</h1>
+        
+        <div className="article-content" dangerouslySetInnerHTML={{ __html: '<p>Остеопатия — это целостный подход к диагностике и лечению нарушений в организме через работу с мышечно-скелетной системой. Врач-остеопат ищет первопричину боли, а не просто снимает симптомы.</p><h2>Что лечит остеопат</h2><ul><li>Боли в позвоночнике (остеохондроз, грыжи, протрузии).</li><li>Головные боли, мигрени, головокружения.</li><li>Ограничение подвижности суставов, скованность.</li><li>Вегетативные дисфункции (ВСД, панические атаки).</li></ul><h2>Как проходит онлайн-консультация</h2><p>Во время видеоприёма врач проводит сбор анамнеза и функциональный тест. Вы сможете показать, как двигаетесь, где чувствуете дискомфорт. Врач оценит вашу осанку, асимметрию тела и назначит план лечения.</p>' }} />
+
+        <div className="mt-10 p-6 bg-teal-50 rounded-lg text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Нужна консультация?</h2>
+          <p className="text-slate-600 mb-4">Запишитесь на онлайн-приём к врачу с 49-летним стажем.</p>
+          <Link href="/#booking" className="inline-block bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-colors">
             Записаться на приём
-          </a>
+          </Link>
         </div>
-      </div>
-      <Footer />
+      </article>
     </main>
-  )
+  );
 }

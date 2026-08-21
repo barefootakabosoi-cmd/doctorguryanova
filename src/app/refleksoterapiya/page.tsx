@@ -1,45 +1,33 @@
-import type { Metadata } from "next"
-import Navbar from "@/components/Navbar"
-import Footer from "@/components/Footer"
+import { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Иглоукалывание (акупунктура) в Москве — Гурьянова В.А.",
-  description: "Рефлексотерапия и иглоукалывание по методике традиционной китайской медицины. Лечение болей, бессонницы, мигреней. 49 лет опыта. Запись онлайн.",
-  keywords: "иглоукалывание москва, акупунктура, рефлексотерапия, иглотерапия, лечение иглами, ткм",
-  alternates: { canonical: "https://doctorguryanova.ru/refleksoterapiya/" },
-}
+  title: 'Рефлексотерапия (иглоукалывание)',
+  description: 'Лечение иглоукалыванием online и offline. Рефлексотерапевт с 49-летним стажем. Снятие боли, лечение остеохондроза, мигрени. Запись на консультацию.',
+  openGraph: {
+    title: 'Рефлексотерапия (иглоукалывание)',
+    description: 'Лечение иглоукалыванием online и offline. Рефлексотерапевт с 49-летним стажем. Снятие боли, лечение остеохондроза, мигрени. Запись на консультацию.',
+  },
+};
 
-export default function RefleksoterapiyaPage() {
+export const dynamic = "force-dynamic";
+
+export default function Page() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-teal-50/30">
-      <Navbar />
-      <div className="max-w-3xl mx-auto px-6 pt-20 pb-16">
-        <p className="text-xs font-semibold text-teal-600 uppercase tracking-widest mb-3">Направление</p>
-        <h1 className="text-4xl font-bold text-slate-900 mb-6">Рефлексотерапия (иглоукалывание)</h1>
-        <div className="prose prose-slate max-w-none">
-          <p className="text-lg text-slate-600 leading-relaxed mb-6">
-            Рефлексотерапия — метод лечения, основанный на раздражении биологически активных точек организма. Гурьянова Валентина Андреевна применяет классическую акупунктуру, лазерную акупунктуру и аурикулотерапию.
-          </p>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Показания</h2>
-          <ul className="space-y-2 text-slate-600">
-            <li>• Хронические боли в спине, шее, суставах</li>
-            <li>• Бессонница, депрессия, хронический стресс</li>
-            <li>• Мигрени и головокружения</li>
-            <li>• Нарушения пищеварения, метаболизма</li>
-            <li>• Восстановление после инсультов</li>
-            <li>• Бесплодие (в комплексной терапии)</li>
-          </ul>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Как проходит сеанс</h2>
-          <p className="text-slate-600 mb-4">После диагностики и определения активных точек врач вводит стерильные одноразовые иглы. Сеанс длится 30–60 минут. Курс обычно составляет 8–12 процедур.</p>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Стоимость</h2>
-          <p className="text-2xl font-bold text-teal-700 mb-2">4 000 ₽</p>
-          <p className="text-sm text-slate-500 mb-8">Сеанс рефлексотерапии, 60 минут</p>
-          <a href="/#booking" className="inline-block bg-slate-900 text-white px-7 py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all duration-300 shadow-lg shadow-slate-900/10">
+    <main className="max-w-4xl mx-auto px-4 py-12">
+      <article className="prose prose-slate max-w-none">
+        <h1 className="text-3xl font-bold text-slate-900 mb-6">Рефлексотерапия (иглоукалывание)</h1>
+        
+        <div className="article-content" dangerouslySetInnerHTML={{ __html: '<p>Рефлексотерапия (акупунктура, иглоукалывание) — это древний и доказанный метод лечения, основанный на воздействии на биологически активные точки организма. Метод широко применяется в неврологии для снятия боли, восстановления нервной системы и улучшения кровообращения.</p><h2>При каких заболеваниях помогает рефлексотерапия</h2><ul><li><strong>Болевые синдромы:</strong> мигрень, головная боль напряжения, боли в спине и шее, невралгия тройничного нерва.</li><li><strong>Заболевания позвоночника:</strong> остеохондроз, грыжи дисков, радикулопатии.</li><li><strong>Неврологические нарушения:</strong> вегето-сосудистая дистония (ВСД), нарушения сна, панические атаки.</li></ul><h2>Онлайн-консультация по рефлексотерапии</h2><p>На онлайн-приёме врач определит показания к процедуре, составит индивидуальный план лечения и подберёт точки для воздействия. Врач также может обучить вас техникам точечного массажа (акупрессуры) для самостоятельного снятия боли.</p>' }} />
+
+        <div className="mt-10 p-6 bg-teal-50 rounded-lg text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Нужна консультация?</h2>
+          <p className="text-slate-600 mb-4">Запишитесь на онлайн-приём к врачу с 49-летним стажем.</p>
+          <Link href="/#booking" className="inline-block bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-colors">
             Записаться на приём
-          </a>
+          </Link>
         </div>
-      </div>
-      <Footer />
+      </article>
     </main>
-  )
+  );
 }

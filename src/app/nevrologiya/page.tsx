@@ -1,45 +1,33 @@
-import type { Metadata } from "next"
-import Navbar from "@/components/Navbar"
-import Footer from "@/components/Footer"
+import { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Невролог в Москве — Гурьянова Валентина Андреевна | Онлайн-консультация",
-  description: "Приём невролога с 49-летним стажем. Лечение головных болей, мигреней, остеохондроза, невралгий. Онлайн-консультация. Запись на приём.",
-  keywords: "невролог москва, невролог онлайн, головные боли лечение, мигрень лечение, остеохондроз, невралгия, приём невролога",
-  alternates: { canonical: "https://doctorguryanova.ru/nevrologiya/" },
-}
+  title: 'Онлайн-консультация невролога',
+  description: 'Профессиональная онлайн-консультация невролога с 49-летним стажем. Лечение головных болей, остеохондроза, невралгии. Запись на видеоприём.',
+  openGraph: {
+    title: 'Онлайн-консультация невролога',
+    description: 'Профессиональная онлайн-консультация невролога с 49-летним стажем. Лечение головных болей, остеохондроза, невралгии. Запись на видеоприём.',
+  },
+};
 
-export default function NevrologiyaPage() {
+export const dynamic = "force-dynamic";
+
+export default function Page() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-teal-50/30">
-      <Navbar />
-      <div className="max-w-3xl mx-auto px-6 pt-20 pb-16">
-        <p className="text-xs font-semibold text-teal-600 uppercase tracking-widest mb-3">Направление</p>
-        <h1 className="text-4xl font-bold text-slate-900 mb-6">Неврология</h1>
-        <div className="prose prose-slate max-w-none">
-          <p className="text-lg text-slate-600 leading-relaxed mb-6">
-            Неврология — раздел медицины, изучающий заболевания нервной системы. Гурьянова Валентина Андреевна специализируется на диагностике и лечении хронических болевых синдромов, мигреней, последствий травм и инсультов.
-          </p>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Что лечит невролог</h2>
-          <ul className="space-y-2 text-slate-600">
-            <li>• Головные боли и мигрени любой этиологии</li>
-            <li>• Остеохондроз позвоночника, межпозвоночные грыжи</li>
-            <li>• Невралгии тройничного нерва, пояснично-крестцовый радикулит</li>
-            <li>• Нарушения сна, хроническая усталость, тревожность</li>
-            <li>• Последствия черепно-мозговых травм и инсультов</li>
-            <li>• Вегето-сосудистая дистония</li>
-          </ul>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Методы диагностики</h2>
-          <p className="text-slate-600 mb-4">На первичной консультации проводится неврологический осмотр, оценка рефлексов, координации, чувствительности. При необходимости назначается МРТ, КТ, ЭЭГ, допплерография сосудов.</p>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Стоимость приёма</h2>
-          <p className="text-2xl font-bold text-teal-700 mb-2">3 500 ₽</p>
-          <p className="text-sm text-slate-500 mb-8">Первичная консультация, 45 минут</p>
-          <a href="/#booking" className="inline-block bg-slate-900 text-white px-7 py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all duration-300 shadow-lg shadow-slate-900/10">
+    <main className="max-w-4xl mx-auto px-4 py-12">
+      <article className="prose prose-slate max-w-none">
+        <h1 className="text-3xl font-bold text-slate-900 mb-6">Онлайн-консультация невролога</h1>
+        
+        <div className="article-content" dangerouslySetInnerHTML={{ __html: '<p>Неврология — это область медицины, связанная с диагностикой и лечением заболеваний центральной и периферической нервной системы. Онлайн-консультация невролога позволяет получить экспертное медицинское заключение без необходимости посещения клиники, что особенно важно для пациентов из регионов и с ограниченной мобильностью.</p><h2>С какими симптомами обращаются к неврологу онлайн</h2><ul><li><strong>Головные боли и мигрени</strong> — хронические боли, влияющие на качество жизни.</li><li><strong>Головокружения и нарушение координации</strong> — частые симптомы шейного остеохондроза или проблем с сосудами.</li><li><strong>Боли в спине и шее</strong> — остеохондроз, радикулит, протрузии и грыжи дисков.</li><li><strong>Онемение конечностей</strong> — покалывание, снижение чувствительности (признаки защемления нервов).</li><li><strong>Шум в ушах</strong> — часто связан с сосудистыми или мышечными спазмами.</li><li><strong>Нарушения сна и хроническая усталость</strong> — неврологические проявления стресса.</li></ul><h2>Как проходит онлайн-приём</h2><p>Консультация проводится через видеосвязь (Jitsi Meet). На приёме врач собирает полный анамнез, анализирует симптомы, изучает обследования (МРТ, КТ) и ставит предварительный диагноз.</p>' }} />
+
+        <div className="mt-10 p-6 bg-teal-50 rounded-lg text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Нужна консультация?</h2>
+          <p className="text-slate-600 mb-4">Запишитесь на онлайн-приём к врачу с 49-летним стажем.</p>
+          <Link href="/#booking" className="inline-block bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-colors">
             Записаться на приём
-          </a>
+          </Link>
         </div>
-      </div>
-      <Footer />
+      </article>
     </main>
-  )
+  );
 }

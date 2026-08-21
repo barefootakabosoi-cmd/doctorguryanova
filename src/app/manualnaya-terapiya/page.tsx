@@ -1,42 +1,33 @@
-import type { Metadata } from "next"
-import Navbar from "@/components/Navbar"
-import Footer from "@/components/Footer"
+import { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Мануальная терапия в Москве — Гурьянова Валентина Андреевна",
-  description: "Мануальная терапия позвоночника и суставов. Лечение остеохондроза, сколиоза, грыж. 49 лет опыта. Онлайн-консультация и запись.",
-  keywords: "мануальная терапия москва, мануальный терапевт, лечение позвоночника, остеохондроз мануальная терапия",
-  alternates: { canonical: "https://doctorguryanova.ru/manualnaya-terapiya/" },
-}
+  title: 'Мануальная терапия',
+  description: 'Консультация мануального терапевта онлайн. Снятие острых болей в спине и шее. Безопасные техники, врач с 49-летним стажем. Запись на видеоприём.',
+  openGraph: {
+    title: 'Мануальная терапия',
+    description: 'Консультация мануального терапевта онлайн. Снятие острых болей в спине и шее. Безопасные техники, врач с 49-летним стажем. Запись на видеоприём.',
+  },
+};
 
-export default function ManualnayaTerapiyaPage() {
+export const dynamic = "force-dynamic";
+
+export default function Page() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-teal-50/30">
-      <Navbar />
-      <div className="max-w-3xl mx-auto px-6 pt-20 pb-16">
-        <p className="text-xs font-semibold text-teal-600 uppercase tracking-widest mb-3">Направление</p>
-        <h1 className="text-4xl font-bold text-slate-900 mb-6">Мануальная терапия</h1>
-        <div className="prose prose-slate max-w-none">
-          <p className="text-lg text-slate-600 leading-relaxed mb-6">
-            Мануальная терапия — метод лечения заболеваний опорно-двигательного аппарата ручными техниками. Гурьянова Валентина Андреевна применяет мягкие и безопасные методы воздействия на позвоночник и суставы.
-          </p>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Показания</h2>
-          <ul className="space-y-2 text-slate-600">
-            <li>• Остеохондроз шейного, грудного, поясничного отделов</li>
-            <li>• Межпозвоночные грыжи без осложнений</li>
-            <li>• Сколиоз, кифоз, нарушения осанки</li>
-            <li>• Боли в спине, шее, пояснице</li>
-            <li>• Нарушения подвижности суставов</li>
-          </ul>
-          <h2 className="text-xl font-bold text-slate-900 mt-8 mb-4">Стоимость</h2>
-          <p className="text-2xl font-bold text-teal-700 mb-2">3 200 ₽</p>
-          <p className="text-sm text-slate-500 mb-8">Сеанс мануальной терапии, 40 минут</p>
-          <a href="/#booking" className="inline-block bg-slate-900 text-white px-7 py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all duration-300 shadow-lg shadow-slate-900/10">
+    <main className="max-w-4xl mx-auto px-4 py-12">
+      <article className="prose prose-slate max-w-none">
+        <h1 className="text-3xl font-bold text-slate-900 mb-6">Мануальная терапия</h1>
+        
+        <div className="article-content" dangerouslySetInnerHTML={{ __html: '<p>Мануальная терапия — это метод лечения заболеваний опорно-двигательного аппарата с помощью рук врача. Применяется для восстановления подвижности суставов, снятия мышечных блоков и устранения острых болевых синдромов.</p><h2>Когда необходима мануальная терапия</h2><ul><li>Острая боль в пояснице (люмбаго, ишиас).</li><li>Боли в шее, отдающие в руку (цервикалгия).</li><li>Защемление седалищного нерва.</li><li>Мышечные спазмы, ограничение движений.</li></ul><h2>Лечение онлайн</h2><p>В условиях удалённого приёма врач снимет диагноз, назначит медикаментозную поддержку и покажет техники постизометрической релаксации (ПИР) — специальные мягкие движения, которые вы сделаете сами под руководством врача, чтобы снять спазм прямо во время звонка.</p>' }} />
+
+        <div className="mt-10 p-6 bg-teal-50 rounded-lg text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Нужна консультация?</h2>
+          <p className="text-slate-600 mb-4">Запишитесь на онлайн-приём к врачу с 49-летним стажем.</p>
+          <Link href="/#booking" className="inline-block bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-colors">
             Записаться на приём
-          </a>
+          </Link>
         </div>
-      </div>
-      <Footer />
+      </article>
     </main>
-  )
+  );
 }
