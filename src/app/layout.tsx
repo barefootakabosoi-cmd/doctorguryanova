@@ -64,7 +64,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru" className="{inter.variable} {playfair.variable}">
+    <html lang="ru" className={`${inter.variable} ${playfair.variable}`}>
       <head>
         <meta name="yandex-verification" content="4d3ba462f450909b" />
         <script
