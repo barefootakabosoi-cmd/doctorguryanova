@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Script from "next/script"
 import "./globals.css"
+import { Inter, Playfair_Display } from "next/font/google"
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://doctorguryanova.ru"),
@@ -53,13 +54,17 @@ export const metadata: Metadata = {
   },
 }
 
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-serif", weight: ["400", "500", "600", "700"], display: "swap" });
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <html lang="ru">
+    <html lang="ru" className="{inter.variable} {playfair.variable}">
       <head>
         <meta name="yandex-verification" content="4d3ba462f450909b" />
         <script

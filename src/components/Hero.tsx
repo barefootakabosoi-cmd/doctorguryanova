@@ -1,84 +1,57 @@
-"use client"
-
 export default function Hero() {
-  const scrollTo = (id: string) => {
-    const el = document.getElementById(id)
-    if (el) el.scrollIntoView({ behavior: "smooth" })
-  }
-
   return (
-    <section className="max-w-5xl mx-auto px-6 pt-20 pb-16">
-      <div className="grid lg:grid-cols-5 gap-12 items-start">
-        <div className="lg:col-span-3 space-y-8">
-          <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide uppercase border border-teal-100/60">
-              <span className="w-1.5 h-1.5 bg-teal-500 rounded-full"></span>
-              Онлайн-консультации
-            </div>
-            <h2 className="text-4xl lg:text-5xl font-bold text-slate-900 leading-[1.1] tracking-tight">
-              Неврология,<br />
-              <span className="text-teal-700">рефлексотерапия</span><br />
-              и гирудотерапия
-            </h2>
-            <p className="text-lg text-slate-500 leading-relaxed max-w-lg">
-              49 лет практики. Интегративный подход — доказательная медицина плюс традиционные методики. Индивидуальные программы лечения.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-4">
-            <button onClick={() => scrollTo("booking")} className="bg-slate-900 text-white px-7 py-3.5 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all duration-300 shadow-lg shadow-slate-900/10 hover:shadow-xl hover:shadow-slate-900/15 active:scale-[0.98]">
-              Записаться на приём
-            </button>
-            <button onClick={() => scrollTo("methods")} className="bg-white text-slate-700 px-7 py-3.5 rounded-xl text-sm font-semibold border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all duration-300">
-              Методы лечения
-            </button>
-          </div>
-          <div className="flex items-center gap-6 pt-4">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-slate-900">49</p>
-              <p className="text-xs text-slate-400 uppercase tracking-wide">лет стажа</p>
-            </div>
-            <div className="w-px h-10 bg-slate-200"></div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-slate-900">9.9</p>
-              <p className="text-xs text-slate-400 uppercase tracking-wide">рейтинг</p>
-            </div>
-            <div className="w-px h-10 bg-slate-200"></div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-slate-900">45+</p>
-              <p className="text-xs text-slate-400 uppercase tracking-wide">лет практики</p>
-            </div>
-          </div>
+    <section className="relative overflow-hidden">
+      {/* Декоративный фоновый градиент */}
+      <div className="absolute inset-0 -z-10">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#C5A059]/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#1A1A1A]/5 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-6 pt-24 pb-16 text-center">
+        <span className="inline-block text-xs uppercase tracking-[0.2em] text-[#C5A059] font-semibold mb-6">
+          Врач высшей категории · 49 лет практики
+        </span>
+        
+        <h1 className="text-5xl md:text-6xl lg:text-7xl font-serif text-[#1A1A1A] mb-6 leading-tight">
+          Неврология и рефлексотерапия<br/>
+          <span className="text-[#C5A059]">без боли и таблеток</span>
+        </h1>
+
+        <p className="text-lg md:text-xl text-[#4A4A4A] max-w-2xl mx-auto mb-10 leading-relaxed">
+          Онлайн-консультации опытного невролога. Индивидуальный подход к лечению мигреней, остеохондроза и сосудистых патологий.
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a 
+            href="/#booking" 
+            className="bg-[#1A1A1A] text-[#FAF9F6] px-8 py-4 rounded-full text-base font-medium hover:bg-[#C5A059] transition-all duration-300 shadow-lg w-full sm:w-auto"
+          >
+            Записаться на приём
+          </a>
+          <a 
+            href="/blog" 
+            className="border border-[#1A1A1A]/20 text-[#1A1A1A] px-8 py-4 rounded-full text-base font-medium hover:border-[#C5A059] hover:text-[#C5A059] transition-all duration-300 w-full sm:w-auto"
+          >
+            Читать блог
+          </a>
         </div>
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-2xl p-6 shadow-xl shadow-slate-200/50 border border-slate-100">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-100 to-emerald-100 flex items-center justify-center text-2xl">👩‍⚕️</div>
-              <div>
-                <p className="font-bold text-slate-900">Гурьянова Валентина Андреевна</p>
-                <p className="text-sm text-slate-500">Врач высшей категории</p>
-              </div>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b border-slate-50">
-                <span className="text-slate-500">Образование</span>
-                <span className="font-medium text-slate-700 text-right">1-й МГМУ им. Сеченова, 1977</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-slate-50">
-                <span className="text-slate-500">Специальности</span>
-                <span className="font-medium text-slate-700 text-right">Невролог, рефлексотерапевт</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-slate-50">
-                <span className="text-slate-500">Методы</span>
-                <span className="font-medium text-slate-700 text-right">Акупунктура, гирудотерапия</span>
-              </div>
-              <div className="flex justify-between py-2">
-                <span className="text-slate-500">Стоимость</span>
-                <span className="font-bold text-teal-700">от 3 000 ₽</span>
-              </div>
-            </div>
+
+        {/* Статистика */}
+        <div className="grid grid-cols-3 gap-8 mt-20 max-w-2xl mx-auto pt-10 border-t border-[#1A1A1A]/10">
+          <div>
+            <div className="text-3xl font-serif text-[#C5A059] mb-1">49</div>
+            <div className="text-xs text-[#4A4A4A] uppercase tracking-wider">Лет опыта</div>
+          </div>
+          <div>
+            <div className="text-3xl font-serif text-[#C5A059] mb-1">1-й МГМУ</div>
+            <div className="text-xs text-[#4A4A4A] uppercase tracking-wider">Им. Сеченова</div>
+          </div>
+          <div>
+            <div className="text-3xl font-serif text-[#C5A059] mb-1">Online</div>
+            <div className="text-xs text-[#4A4A4A] uppercase tracking-wider">Приём</div>
           </div>
         </div>
       </div>
     </section>
-  )
+  );
 }
