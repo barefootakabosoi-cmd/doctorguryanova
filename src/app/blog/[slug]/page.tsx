@@ -42,6 +42,31 @@ export default async function PostPage({ params }: PageProps) {
         ← Все статьи
       </Link>
 
+      
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "MedicalWebPage",
+              "headline": post.title,
+              "description": post.excerpt,
+              "datePublished": post.publishedAt,
+              "dateModified": post.updatedAt,
+              "author": {
+                "@type": "Physician",
+                "name": "Гурьянова Валентина Андреевна",
+                "url": "https://doctorguryanova.ru"
+              },
+              "keywords": post.keywords.join(", "),
+              "mainEntityOfPage": {
+                "@type": "WebPage",
+                "@id": `https://doctorguryanova.ru/blog/${post.slug}`
+              }
+            })
+          }}
+        />
+
       <article>
         <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
           <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">

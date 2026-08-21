@@ -102,6 +102,12 @@ export default function BookingForm() {
   const onSubmit = async (data: BookingFormData) => {
     setLoading(true)
     setServerError("")
+    
+    // Отправка цели в Яндекс.Метрику
+    if (typeof window !== "undefined" && (window as any).ym) {
+      const ymId = process.env.NEXT_PUBLIC_YANDEX_METRIKA_ID;
+      if (ymId) (window as any).ym(ymId, 'reachGoal', 'booking_submit');
+    }
     try {
       const bookingRes = await fetch("/api/booking/", {
         method: "POST",
