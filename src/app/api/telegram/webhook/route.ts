@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
+import { chatCompletion } from "@/lib/gigachat";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -95,10 +96,71 @@ async function rejectDraft(draftId: string) {
   console.log(`[webhook] Черновик удалён: ${draftId}`);
 }
 
+
+// Обработка текстовых сообщений (AI-Триаж)
+async function handlePatientMessage(chatId: number, text: string) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return;
+
+  // Отправляем "печатает..."
+  await fetch(`https://api.telegram.org/bot${botToken}/sendChatAction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, action: "typing" }),
+  });
+
+  try {
+    const result = await chatCompletion({
+      messages: [
+        {
+          role: "system",
+          content: `Ты — медицинский ассистент врача-невролога Гурьяновой Валентины Андреевны. 
+Пациент описывает свои симптомы. Твоя задача:
+1. Кратко и экспертно объяснить, с чем这可能 быть связано (неврология, остеохондроз, ВСД и т.д.).
+2. НЕ ставить точный диагноз и НЕ назначать лечение.
+3. Мягко порекомендовать онлайн-консультацию невролога.
+4. Дать прямую ссылку на запись: https://doctorguryanova.ru#booking
+Ответ должен быть коротким, на русском языке, без эмодзи.`
+        },
+        { role: "user", content: text }
+      ],
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+
+    const reply = result.choices[0]?.message?.content || "Извините, не смог обработать запрос. Напишите нам или запишитесь на сайте: https://doctorguryanova.ru";
+    
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: reply,
+        parse_mode: "HTML",
+        disable_web_page_preview: false
+      }),
+    });
+  } catch (e) {
+    console.error("[webhook] Triage error:", e);
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: "Записаться на консультацию можно здесь: https://doctorguryanova.ru" }),
+    });
+  }
+}
+
+
 export async function POST(req: NextRequest) {
   try {
     const update = await req.json();
     
+    // Обработка текстовых сообщений (AI-Триаж)
+    if (update.message && update.message.text && update.message.chat.type === "private") {
+      await handlePatientMessage(update.message.chat.id, update.message.text);
+      return NextResponse.json({ ok: true });
+    }
+
     // Проверяем, что это callback_query (нажатие кнопки)
     if (!update.callback_query) {
       return NextResponse.json({ ok: true });
