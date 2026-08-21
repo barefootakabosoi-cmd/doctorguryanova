@@ -1,6 +1,4 @@
 // src/app/blog/page.tsx
-// Страница блога — список всех статей
-
 import { Metadata } from "next";
 import Link from "next/link";
 import { getAllPosts } from "@/lib/blog-data";
@@ -8,14 +6,12 @@ import { getAllPosts } from "@/lib/blog-data";
 export const metadata: Metadata = {
   title: "Блог невролога — статьи о здоровье | Гурьянова В.А.",
   description: "Полезные статьи о неврологии, рефлексотерапии, гирудотерапии и остеопатии от врача с 49-летним стажем.",
-  openGraph: {
-    title: "Блог невролога — статьи о здоровье",
-    description: "Полезные статьи о неврологии от врача с 49-летним стажем.",
-  },
 };
 
-export default function BlogPage() {
-  const posts = getAllPosts();
+export const dynamic = "force-dynamic";
+
+export default async function BlogPage() {
+  const posts = await getAllPosts();
 
   return (
     <main className="max-w-4xl mx-auto px-4 py-12">
@@ -23,8 +19,7 @@ export default function BlogPage() {
       <p className="text-slate-600 mb-8">
         Полезные статьи о неврологии, рефлексотерапии, гирудотерапии и остеопатии
         от <strong>Гурьяновой Валентины Андреевны</strong> — врача-невролога с{" "}
-        <strong>49-летним стажем</strong>, выпускницы{" "}
-        <strong>1-го МГМУ им. Сеченова (1977)</strong>.
+        <strong>49-летним стажем</strong>.
       </p>
 
       <div className="grid gap-6">
@@ -54,10 +49,7 @@ export default function BlogPage() {
 
             <div className="flex flex-wrap gap-2 mt-3">
               {post.keywords.slice(0, 3).map((kw) => (
-                <span
-                  key={kw}
-                  className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded"
-                >
+                <span key={kw} className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
                   {kw}
                 </span>
               ))}
@@ -67,9 +59,7 @@ export default function BlogPage() {
       </div>
 
       {posts.length === 0 && (
-        <p className="text-slate-500 text-center py-12">
-          Статьи скоро появятся. Следите за обновлениями!
-        </p>
+        <p className="text-slate-500 text-center py-12">Статьи скоро появятся.</p>
       )}
     </main>
   );
