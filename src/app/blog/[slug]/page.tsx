@@ -77,7 +77,7 @@ export default async function PostPage({ params }: PageProps) {
           <span>•</span>
           <span>{post.readTime} мин чтения</span>
           <span>•</span>
-          <span>{new Date(post.publishedAt).toLocaleDateString("ru-RU")}</span>
+          <span>{post.publishedAt.split("-").reverse().join(".")}</span>
         </div>
 
         <h1 className="text-3xl font-bold text-slate-900 mb-4">{post.title}</h1>

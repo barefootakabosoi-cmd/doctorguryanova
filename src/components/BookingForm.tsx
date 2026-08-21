@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 
 const times = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
-const today = new Date().toISOString().split("T")[0]
+
 
 const bookingSchema = z.object({
   direction: z.string().min(1, "Выберите направление"),
@@ -50,6 +50,7 @@ export default function BookingForm() {
   const [loading, setLoading] = useState(false)
   const [serverError, setServerError] = useState("")
   const [bookedSlots, setBookedSlots] = useState<string[]>([])
+  const [today, setToday] = useState("")
 
 
   const {
@@ -62,7 +63,7 @@ export default function BookingForm() {
   } = useForm<BookingFormData>({
     resolver: zodResolver(bookingSchema),
     defaultValues: {
-      date: today,
+      date: "",
       consent: false,
     },
   })
@@ -73,6 +74,14 @@ export default function BookingForm() {
   const time = watch("time")
   const name = watch("name")
   const phone = watch("phone")
+
+  useEffect(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    setToday(`${y}-${m}-${day}`);
+  }, []);
 
   useEffect(() => {
     if (!date) return
@@ -201,7 +210,7 @@ export default function BookingForm() {
                   <label className="block text-sm font-medium text-slate-700 mb-2">Дата</label>
                   <input
                     type="date"
-                    min={today}
+                    min={today || "1900-01-01"}
                     {...register("date")}
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 text-sm"
                   />

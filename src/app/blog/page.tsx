@@ -37,7 +37,7 @@ export default async function BlogPage() {
               <span>•</span>
               <span>{post.readTime} мин чтения</span>
               <span>•</span>
-              <span>{new Date(post.publishedAt).toLocaleDateString("ru-RU")}</span>
+              <span>{post.publishedAt.split("-").reverse().join(".")}</span>
             </div>
 
             <Link href={`/blog/${post.slug}`} className="block group">
