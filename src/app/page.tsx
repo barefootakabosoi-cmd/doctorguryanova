@@ -20,7 +20,7 @@ export default async function Home() {
       <BookingForm />
       <Reviews />
       <SEOSections />
-      <Footer />
+      
     
       {/* Последние статьи блога */}
       <section className="max-w-4xl mx-auto px-6 py-16">
@@ -41,6 +41,7 @@ export default async function Home() {
         </div>
       </section>
     
-    </main>
+    
+      <Footer /></main>
   )
 }
