@@ -9,7 +9,7 @@ export async function GET() {
     return NextResponse.json({ error: "TELEGRAM_BOT_TOKEN not set" }, { status: 500 });
   }
 
-  const webhookUrl = "https://doctorguryanova.ru/api/telegram/webhook";
+  const webhookUrl = "https://www.doctorguryanova.ru/api/telegram/webhook";
 
   // Регистрируем webhook в Telegram
   const res = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook?url=${webhookUrl}`, {
