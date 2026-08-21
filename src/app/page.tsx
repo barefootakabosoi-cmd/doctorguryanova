@@ -12,7 +12,7 @@ import Footer from "@/components/Footer"
 export default async function Home() {
   const posts = await getAllPosts();
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-teal-50/30">
+    <main className="min-h-screen bg-cream text-charcoal">
       <Navbar />
       <Hero />
       <Methods />

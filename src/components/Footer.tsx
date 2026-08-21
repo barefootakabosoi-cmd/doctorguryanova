@@ -1,40 +1,36 @@
+import Link from "next/link";
+
 export default function Footer() {
   return (
-    <footer className="bg-slate-900 text-slate-400 py-12">
-      <div className="max-w-5xl mx-auto px-6">
-        <div className="grid md:grid-cols-4 gap-8 text-sm">
-          <div>
-            <h5 className="text-white font-bold mb-3">Валентина Гурьянова</h5>
-            <p className="leading-relaxed">Врач-невролог, рефлексотерапевт, гирудотерапевт. 49 лет практики.</p>
-          </div>
-          <div>
-            <h5 className="text-white font-semibold mb-3">Направления</h5>
-            <ul className="space-y-2">
-              <li><a href="/nevrologiya/" className="hover:text-white transition-colors duration-300">Неврология</a></li>
-              <li><a href="/refleksoterapiya/" className="hover:text-white transition-colors duration-300">Рефлексотерапия</a></li>
-              <li><a href="/girudoterapiya/" className="hover:text-white transition-colors duration-300">Гирудотерапия</a></li>
-              <li><a href="/osteopatiya/" className="hover:text-white transition-colors duration-300">Остеопатия</a></li>
-            </ul>
-          </div>
-          <div>
-            <h5 className="text-white font-semibold mb-3">Информация</h5>
-            <ul className="space-y-2">
-              <li><a href="/requisites/" className="hover:text-white transition-colors duration-300">Реквизиты и оферта</a></li>
-              <li><a href="#about" className="hover:text-white transition-colors duration-300">О враче</a></li>
-              <li><a href="#methods" className="hover:text-white transition-colors duration-300">Методы</a></li>
-              <li><a href="#booking" className="hover:text-white transition-colors duration-300">Цены</a></li>
-            </ul>
-          </div>
-          <div>
-            <h5 className="text-white font-semibold mb-3">Контакты</h5>
-            <p className="mb-1">+79161004053</p>
-            <p className="mb-1">info@doctorguryanova.ru</p>
-          </div>
+    <footer className="bg-charcoal text-cream/80 mt-20">
+      <div className="max-w-6xl mx-auto px-6 py-12 grid md:grid-cols-3 gap-8">
+        <div>
+          <h3 className="font-serif text-xl text-cream mb-2">Гурьянова В.А.</h3>
+          <p className="text-sm">Врач-невролог, рефлексотерапевт, гирудотерапевт. 49 лет практики.</p>
         </div>
-        <div className="border-t border-slate-800 mt-10 pt-6 text-xs text-slate-500">
-          © 2026 Гурьянова В.А. <a href="/requisites/" className="hover:text-white underline">Реквизиты и публичная оферта</a>
+        <div>
+          <h4 className="font-serif text-lg text-gold mb-3">Навигация</h4>
+          <ul className="space-y-2 text-sm">
+            <li><Link href="/nevrologiya" className="hover:text-gold transition-colors">Неврология</Link></li>
+            <li><Link href="/refleksoterapiya" className="hover:text-gold transition-colors">Рефлексотерапия</Link></li>
+            <li><Link href="/girudoterapiya" className="hover:text-gold transition-colors">Гирудотерапия</Link></li>
+            <li><Link href="/osteopatiya" className="hover:text-gold transition-colors">Остеопатия</Link></li>
+            <li><Link href="/blog" className="hover:text-gold transition-colors">Блог</Link></li>
+          </ul>
+        </div>
+        <div>
+          <h4 className="font-serif text-lg text-gold mb-3">Контакты</h4>
+          <ul className="space-y-2 text-sm">
+            <li>Телефон: <a href="tel:+79161004053" className="hover:text-gold transition-colors">+7 (916) 100-40-53</a></li>
+            <li>Email: <a href="mailto:info@doctorguryanova.ru" className="hover:text-gold transition-colors">info@doctorguryanova.ru</a></li>
+            <li><Link href="/privacy" className="hover:text-gold transition-colors">Политика конфиденциальности</Link></li>
+            <li><Link href="/requisites" className="hover:text-gold transition-colors">Реквизиты</Link></li>
+          </ul>
         </div>
       </div>
+      <div className="border-t border-cream/10 py-6 text-center text-xs text-cream/50">
+        © {new Date().getFullYear()} doctorguryanova.ru. Все права защищены.
+      </div>
     </footer>
-  )
+  );
 }
