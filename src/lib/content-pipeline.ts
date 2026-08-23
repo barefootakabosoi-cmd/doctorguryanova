@@ -152,7 +152,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       { role: "user", content: userPrompt },
     ],
     temperature: 0.2,
-    max_tokens: 5000,
+    max_tokens: 2500,
   });
 
   let content = result.choices[0]?.message?.content ?? "";
@@ -199,7 +199,7 @@ KEYWORDS: ...` },
 Статья: ${content.slice(0, 3000)}` },
     ],
     temperature: 0.4,
-    max_tokens: 1500,
+    max_tokens: 800,
   });
 
   const telegramPost = stripEmoji(tgResult.choices[0]?.message?.content ?? "");

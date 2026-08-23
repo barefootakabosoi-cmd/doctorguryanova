@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { generateArticle } from "@/lib/content-pipeline";
-import { getTopSearchQueries } from "@/lib/metrika";
-import { keywordClusters, getRandomCluster } from "@/lib/seo-keywords";
+import { getRandomCluster } from "@/lib/seo-keywords";
 import { Redis } from "@upstash/redis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 60; // Лимит Vercel Hobby
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL || "",
@@ -14,68 +13,34 @@ const redis = new Redis({
 });
 
 export async function GET(req: Request) {
-  // Защита: Vercel Cron отправляет заголовок Authorization
   const authHeader = req.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    console.log("[cron] Запуск автоматической генерации...");
-    
-    // 1. Получаем запросы из Метрики
-    const metrikaQueries = await getTopSearchQueries();
-    
-    // 2. Ищем запрос, под который ещё нет статьи
-    let chosenTopic = null;
-    let chosenCluster = null;
+    console.log("[cron] Запуск генерации...");
 
-    if (metrikaQueries.length > 0) {
-      // Проверяем, есть ли уже статьи по этим запросам
-      for (const query of metrikaQueries) {
-        const slug = query.toLowerCase().replace(/[^a-zа-я0-9\s]/gi, '').trim().replace(/\s+/g, '-');
-        const existing = await redis.get(`post:${slug}`);
-        if (!existing) {
-          // Нашли запрос с трафиком, под который нет статьи
-          chosenTopic = query;
-          // Ищем подходящий кластер
-          chosenCluster = keywordClusters.find(k => 
-            k.primary.includes(query) || 
-            k.secondary.some(s => s.includes(query)) || 
-            k.longtail.some(l => l.includes(query))
-          );
-          break;
-        }
-      }
-    }
-
-    // 3. Если в Метрике нет данных или всё уже покрыто — берём случайный
-    if (!chosenTopic) {
-      console.log("[cron] Нет новых запросов из Метрики, берём случайный");
-      chosenCluster = getRandomCluster();
-      chosenTopic = chosenCluster.primary;
-    }
+    // Берем случайную тему из семантики (без опроса Метрики)
+    const chosenCluster = getRandomCluster();
+    const chosenTopic = chosenCluster.primary;
 
     console.log(`[cron] Выбрана тема: ${chosenTopic}`);
 
-    // 4. Генерируем статью
-    const generated = await generateArticle(chosenTopic, chosenCluster || undefined);
-    
+    // Генерируем статью
+    const generated = await generateArticle(chosenTopic, chosenCluster);
+
     const draftId = `draft-${Date.now()}`;
     if (process.env.KV_REST_API_URL) {
       await redis.set(draftId, JSON.stringify(generated), { ex: 86400 * 7 });
     }
 
-    // 5. Отправляем в Telegram врачу
+    // Отправляем в Telegram врачу
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
-    
-    if (botToken && chatId) {
-      const sourceText = metrikaQueries.includes(chosenTopic) 
-        ? "📊 <i>Тема выбрана на основе поисковых запросов из Яндекс.Метрики</i>\n\n"
-        : "🎲 <i>Случайная тема из семантического ядра</i>\n";
 
-      const preview = `<b>🤖 Автоматическая генерация статьи</b>\n\n${sourceText}<b>Тема:</b> ${generated.post.title}\n<b>Время чтения:</b> ${generated.post.readTime} мин\n\n<i>Черновик сохранён. ID: ${draftId}</i>`;
+    if (botToken && chatId) {
+      const preview = `<b>🤖 Автоматическая генерация статьи</b>\n\n🎲 <i>Тема из семантического ядра</i>\n\n<b>Тема:</b> ${generated.post.title}\n<b>Время чтения:</b> ${generated.post.readTime} мин\n\n<i>Черновик сохранён. ID: ${draftId}</i>`;
 
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
