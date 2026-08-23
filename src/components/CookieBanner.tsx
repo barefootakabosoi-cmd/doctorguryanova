@@ -1,32 +1,37 @@
 "use client"
-
 import { useState, useEffect } from "react"
+import Link from "next/link"
 
 export default function CookieBanner() {
-  const [visible, setVisible] = useState(false)
+  const [show, setShow] = useState(false)
 
   useEffect(() => {
-    if (!localStorage.getItem("cookie-consent")) setVisible(true)
+    if (!localStorage.getItem("cookieConsent")) {
+      setShow(true)
+    }
   }, [])
 
-  const accept = () => {
-    localStorage.setItem("cookie-consent", "true")
-    setVisible(false)
+  const handleAccept = () => {
+    localStorage.setItem("cookieConsent", "true")
+    setShow(false)
   }
 
-  if (!visible) return null
+  if (!show) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-slate-900 text-white p-4 z-50">
-      <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-        <p className="text-sm text-slate-300">
-          Мы используем cookies для корректной работы сайта. Продолжая использовать сайт, вы соглашаетесь с{" "}
-          <a href="/privacy/" className="text-teal-400 hover:underline">политикой конфиденциальности</a>.
-        </p>
-        <button onClick={accept} className="bg-teal-600 hover:bg-teal-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap">
-          Понятно
-        </button>
-      </div>
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl bg-slate-900/95 backdrop-blur-md text-white p-6 rounded-2xl shadow-2xl border border-slate-700 flex flex-col sm:flex-row items-center gap-4">
+      <p className="text-sm text-slate-300 flex-1 text-center sm:text-left">
+        Мы используем cookies для улучшения работы сайта и анализа трафика. Подробнее в{" "}
+        <Link href="/privacy" className="underline text-amber-400 hover:text-amber-300 transition-colors">
+          политике конфиденциальности
+        </Link>.
+      </p>
+      <button 
+        onClick={handleAccept}
+        className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shadow-sm"
+      >
+        Принять
+      </button>
     </div>
   )
 }
