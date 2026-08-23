@@ -28,7 +28,7 @@ export async function GET(req: Request) {
     console.log(`[cron] Выбрана тема: ${chosenTopic}`);
 
     // Генерируем статью
-    const generated = await generateArticle(chosenTopic, chosenCluster);
+    const generated = await generateArticle(chosenTopic, chosenCluster, true); // fastMode
 
     const draftId = `draft-${Date.now()}`;
     if (process.env.KV_REST_API_URL) {

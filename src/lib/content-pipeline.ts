@@ -87,14 +87,14 @@ function slugify(text: string): string {
     .substring(0, 80);
 }
 
-export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GeneratedContent> {
+export async function generateArticle(topic: string, cluster?: KeywordCluster, fastMode: boolean = false): Promise<GeneratedContent> {
   console.log("[pipeline] Тема:", topic);
 
   const pubmedQuery = cluster?.pubmedQuery || topic;
   const rawPubmed = await getPubMedArticles(pubmedQuery, 8);
   console.log("[pipeline] PubMed:", rawPubmed.length);
 
-  const crossrefArticles = await searchCrossRef(pubmedQuery, 5);
+  const crossrefArticles = fastMode ? [] : await searchCrossRef(pubmedQuery, 5);
   console.log("[pipeline] Crossref:", crossrefArticles.length);
 
   const allArticles = dedupeArticles([...rawPubmed, ...crossrefArticles]).slice(0, 7);
