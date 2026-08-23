@@ -5,7 +5,7 @@ import { Redis } from "@upstash/redis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // Лимит Vercel Hobby
+export const maxDuration = 60;
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL || "",
@@ -19,29 +19,20 @@ export async function GET(req: Request) {
   }
 
   try {
-    console.log("[cron] Запуск генерации...");
-
-    // Берем случайную тему из семантики (без опроса Метрики)
-    const chosenCluster = getRandomCluster();
-    const chosenTopic = chosenCluster.primary;
-
-    console.log(`[cron] Выбрана тема: ${chosenTopic}`);
-
-    // Генерируем статью
-    const generated = await generateArticle(chosenTopic, chosenCluster, true); // fastMode
+    console.log("[cron] Запуск...");
+    const cluster = getRandomCluster();
+    const generated = await generateArticle(cluster.primary, cluster);
 
     const draftId = `draft-${Date.now()}`;
     if (process.env.KV_REST_API_URL) {
       await redis.set(draftId, JSON.stringify(generated), { ex: 86400 * 7 });
     }
 
-    // Отправляем в Telegram врачу
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
 
     if (botToken && chatId) {
-      const preview = `<b>🤖 Автоматическая генерация статьи</b>\n\n🎲 <i>Тема из семантического ядра</i>\n\n<b>Тема:</b> ${generated.post.title}\n<b>Время чтения:</b> ${generated.post.readTime} мин\n\n<i>Черновик сохранён. ID: ${draftId}</i>`;
-
+      const preview = `<b>🤖 Автогенерация</b>\n\n<b>Тема:</b> ${generated.post.title}\n<b>Время чтения:</b> ${generated.post.readTime} мин\n\n<i>Черновик: ${draftId}</i>`;
       await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -61,7 +52,7 @@ export async function GET(req: Request) {
       });
     }
 
-    return NextResponse.json({ success: true, topic: chosenTopic, draftId });
+    return NextResponse.json({ success: true, draftId });
   } catch (error: any) {
     console.error("[cron] error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

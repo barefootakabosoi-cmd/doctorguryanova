@@ -1,8 +1,4 @@
-// src/lib/content-pipeline.ts
-// Pipeline: PubMed + Crossref → GigaChat → готовый контент
-
 import { getPubMedArticles, type PubMedArticle } from "./pubmed";
-import { searchCrossRef, type CrossRefArticle } from "./crossref";
 import { chatCompletion } from "./gigachat";
 import { getClusterByKeyword, type KeywordCluster } from "./seo-keywords";
 import type { BlogPost } from "./blog-data";
@@ -11,7 +7,7 @@ export interface GeneratedContent {
   post: BlogPost;
   telegramPost: string;
   seo: { title: string; description: string; keywords: string };
-  sources: (PubMedArticle | CrossRefArticle)[];
+  sources: PubMedArticle[];
 }
 
 function markdownToHtml(md: string): string {
@@ -59,7 +55,7 @@ function stripEmoji(text: string): string {
   }).join("");
 }
 
-function dedupeArticles(articles: (PubMedArticle | CrossRefArticle)[]): (PubMedArticle | CrossRefArticle)[] {
+function dedupeArticles(articles: PubMedArticle[]): PubMedArticle[] {
   const seen = new Set<string>();
   return articles.filter(a => {
     const key = a.title.toLowerCase().trim();
@@ -87,18 +83,13 @@ function slugify(text: string): string {
     .substring(0, 80);
 }
 
-export async function generateArticle(topic: string, cluster?: KeywordCluster, fastMode: boolean = false): Promise<GeneratedContent> {
+export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GeneratedContent> {
   console.log("[pipeline] Тема:", topic);
 
   const pubmedQuery = cluster?.pubmedQuery || topic;
-  const rawPubmed = await getPubMedArticles(pubmedQuery, 8);
-  console.log("[pipeline] PubMed:", rawPubmed.length);
-
-  const crossrefArticles = fastMode ? [] : await searchCrossRef(pubmedQuery, 5);
-  console.log("[pipeline] Crossref:", crossrefArticles.length);
-
-  const allArticles = dedupeArticles([...rawPubmed, ...crossrefArticles]).slice(0, 7);
-  console.log("[pipeline] Уникальных:", allArticles.length);
+  const rawPubmed = await getPubMedArticles(pubmedQuery, 5); // Только 5 статей для скорости
+  const allArticles = dedupeArticles(rawPubmed).slice(0, 5);
+  console.log("[pipeline] PubMed:", allArticles.length);
 
   const abstractsText = allArticles.length > 0
     ? allArticles.map((a, i) => `--- Источник ${i + 1} ---\nЗаголовок: ${a.title}\nЖурнал: ${a.journal}, ${a.pubDate}\nAbstract: ${a.abstract}`).join("\n\n")
@@ -139,20 +130,16 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster, f
 ФОРМАТ: HTML (<h2>, <p>, <ul>, <li>, <strong>). НЕ Markdown. НЕ эмодзи.
 Дисклеймер: "Информация носит образовательный характер и не заменяет консультацию врача."`;
 
-  const userPrompt = `Тема: ${topic}
+  const userPrompt = `Тема: ${topic}\n\nНаучные источники:\n${abstractsText}\n\nНапиши профессиональную медицинскую статью. 1500-2000 слов. БЕЗ рекламы. БЕЗ эмодзи.`;
 
-Научные источники:
- ${abstractsText}
-
-Напиши профессиональную медицинскую статью. 2000-3000 слов. БЕЗ рекламы. БЕЗ эмодзи.`;
-
+  // Единственный вызов GigaChat для генерации статьи
   const result = await chatCompletion({
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
     temperature: 0.2,
-    max_tokens: 2500,
+    max_tokens: 2500, // Уменьшено для скорости
   });
 
   let content = result.choices[0]?.message?.content ?? "";
@@ -162,47 +149,13 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster, f
   content = stripEmoji(content);
   console.log("[pipeline] Статья:", content.length, "символов");
 
-  const metaResult = await chatCompletion({
-    messages: [
-      { role: "system", content: "Ты — медицинский редактор. Профессиональные заголовки, НЕ рекламные, НЕ кликбейт." },
-      { role: "user", content: `Для статьи "${topic}" создай:
-TITLE (50-70 символов, профессиональный)
-DESCRIPTION (150-170 символов, информативный)
-KEYWORDS (5-7 через запятую)
+  // Мета-данные генерируем статично (без доп. запросов к ИИ)
+  const title = topic;
+  const excerpt = `Профессиональный разбор темы: ${topic}`;
+  const keywords = cluster ? [cluster.primary] : [topic];
 
-Формат:
-TITLE: ...
-DESCRIPTION: ...
-KEYWORDS: ...` },
-    ],
-    temperature: 0.3,
-    max_tokens: 500,
-  });
-
-  const metaText = metaResult.choices[0]?.message?.content ?? "";
-  const titleMatch = metaText.match(/TITLE:\s*(.+)/i);
-  const descMatch = metaText.match(/DESCRIPTION:\s*(.+)/i);
-  const kwMatch = metaText.match(/KEYWORDS:\s*(.+)/i);
-
-  const title = titleMatch?.[1]?.trim() || topic;
-  const excerpt = descMatch?.[1]?.trim() || `Профессиональный разбор: ${topic}`;
-  const keywords = kwMatch?.[1]?.split(/[,;]/).map((k: string) => k.trim()).filter(Boolean).slice(0, 7) || [topic];
-
-  const tgResult = await chatCompletion({
-    messages: [
-      { role: "system", content: "Ты — врач, ведёшь профессиональный Telegram-канал. Экспертный тон. БЕЗ рекламы. БЕЗ эмодзи. БЕЗ 'запишитесь', 'бесплатная', 'прямо сейчас'." },
-      { role: "user", content: `Напиши пост для Telegram (800-1200 символов). Тема: ${topic}
-
-Экспертный тон. Кратко: о чём тема, что показывают исследования, практический вывод.
-В конце: "Подробнее на сайте" и ссылка — ненавязчиво.
-
-Статья: ${content.slice(0, 3000)}` },
-    ],
-    temperature: 0.4,
-    max_tokens: 800,
-  });
-
-  const telegramPost = stripEmoji(tgResult.choices[0]?.message?.content ?? "");
+  // TG-пост пока оставляем пустым (сгенерируется при публикации или вручную)
+  const telegramPost = "";
 
   const slug = slugify(title);
   const now = new Date().toISOString().split("T")[0];
@@ -222,7 +175,7 @@ KEYWORDS: ...` },
   return { post, telegramPost, seo: { title, description: excerpt, keywords: keywords.join(", ") }, sources: allArticles };
 }
 
-function generateSourcesBlock(articles: (PubMedArticle | CrossRefArticle)[]): string {
+function generateSourcesBlock(articles: PubMedArticle[]): string {
   if (articles.length === 0) return "";
   const sources = articles.map(a =>
     `<li><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a> — ${a.journal}, ${a.pubDate}</li>`

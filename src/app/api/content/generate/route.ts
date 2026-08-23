@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       post: generated.post,
       telegramPost: generated.telegramPost,
       seo: generated.seo,
-      sources: generated.sources.map(s => ({ id: "pmid" in s ? s.pmid : s.doi, title: s.title, url: s.url })),
+      sources: generated.sources.map(s => ({ id: s.pmid, title: s.title, url: s.url })),
     });
   } catch (error: any) {
     console.error("[content/generate] error:", error);
