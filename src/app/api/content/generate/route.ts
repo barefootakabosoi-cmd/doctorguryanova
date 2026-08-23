@@ -3,8 +3,8 @@ import { Redis } from "@upstash/redis";
 import { generateArticle, generateArticleByKeyword } from "@/lib/content-pipeline";
 import { getRandomCluster, keywordClusters } from "@/lib/seo-keywords";
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const redis = new Redis({
@@ -34,28 +34,16 @@ export async function POST(req: NextRequest) {
 
     const generated = await generateArticle(generatedTopic, cluster);
 
-    // Сохраняем черновик в KV
     const draftId = `draft-${Date.now()}`;
     if (process.env.KV_REST_API_URL) {
-      await redis.set(draftId, JSON.stringify(generated), { ex: 86400 * 7 }); // 7 дней
-      console.log("[content/generate] Черновик сохранён:", draftId);
+      await redis.set(draftId, JSON.stringify(generated), { ex: 86400 * 7 });
     }
 
-    // Отправляем в Telegram врачу (если задан TELEGRAM_CHAT_ID)
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
-    
+
     if (botToken && chatId) {
-      const preview = `<b>📝 Новая статья для ревью</b>
-
-<b>Тема:</b> ${generated.post.title}
-<b>Тип:</b> ${generated.post.type === "research" ? "Научный обзор" : "Статья"}
-<b>Время чтения:</b> ${generated.post.readTime} мин
-<b>Ключевые слова:</b> ${generated.post.keywords.join(", ")}
-
-<b>Excerpt:</b> ${generated.post.excerpt}
-
-<i>Черновик сохранён. ID: ${draftId}</i>`;
+      const preview = `<b>📝 Новая статья для ревью</b>\n\n<b>Тема:</b> ${generated.post.title}\n<b>Тип:</b> ${generated.post.type === "research" ? "Научный обзор" : "Статья"}\n<b>Время чтения:</b> ${generated.post.readTime} мин\n\n<i>Черновик сохранён. ID: ${draftId}</i>`;
 
       const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
@@ -74,12 +62,6 @@ export async function POST(req: NextRequest) {
           },
         }),
       });
-      
-      if (!tgRes.ok) {
-        console.error("[content/generate] Telegram error:", await tgRes.text());
-      } else {
-        console.log("[content/generate] Превью отправлено в Telegram");
-      }
     }
 
     return NextResponse.json({

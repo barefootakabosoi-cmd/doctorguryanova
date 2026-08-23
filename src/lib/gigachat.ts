@@ -1,8 +1,4 @@
 // src/lib/gigachat.ts
-// Клиент для GigaChat API (Sber)
-// ВАЖНО: Sber выдаёт ID и Secret в перепутанном порядке.
-// Для Basic Auth: decoded_secret (как username) : id (как password)
-
 import https from "https";
 
 function httpsRequest(options: https.RequestOptions, body?: string): Promise<{ status: number; data: any }> {
@@ -18,6 +14,12 @@ function httpsRequest(options: https.RequestOptions, body?: string): Promise<{ s
         }
       });
     });
+
+    // Таймаут 30 секунд
+    req.setTimeout(30000, () => {
+      req.destroy(new Error("GigaChat request timeout (30s)"));
+    });
+
     req.on("error", reject);
     if (body) req.write(body);
     req.end();
@@ -47,7 +49,6 @@ async function getAccessToken(): Promise<string> {
         Authorization: `Basic ${credentials}`,
         RqUID: crypto.randomUUID(),
       },
-      // Workaround: сертификат Сбербанка не в trust store Node.js на Vercel
       rejectUnauthorized: false,
     },
     new URLSearchParams({ scope: process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS" }).toString()
@@ -62,7 +63,6 @@ async function getAccessToken(): Promise<string> {
 
 async function chatRequest(token: string, body: object): Promise<any> {
   const payload = JSON.stringify(body);
-
   const { status, data } = await httpsRequest(
     {
       hostname: "gigachat.devices.sberbank.ru",
@@ -75,7 +75,6 @@ async function chatRequest(token: string, body: object): Promise<any> {
         Authorization: `Bearer ${token}`,
         "Content-Length": Buffer.byteLength(payload),
       },
-      // Workaround: сертификат Сбербанка не в trust store Node.js на Vercel
       rejectUnauthorized: false,
     },
     payload
@@ -102,81 +101,4 @@ export async function chatCompletion(options: {
     temperature: options.temperature ?? 0.3,
     max_tokens: options.max_tokens ?? 2048,
   });
-}
-
-export async function generateArticleFromAbstract(abstract: string, topic: string): Promise<string> {
-  const result = await chatCompletion({
-    messages: [
-      {
-        role: "system",
-        content: `Ты — медицинский редактор сайта doctorguryanova.ru.
-Врач: Гурьянова Валентина Андреевна, невролог, нутрициолог, рефлексотерапевт, 49 лет практики.`,
-      },
-      {
-        role: "user",
-        content: `Прочитай abstract и напиши обзор для пациентов на русском.
-
-Тема: ${topic}
-
-Инструкции:
-1. НЕ копируй текст оригинала. Перескажи своими словами.
-2. Структура: заголовок, о чём исследование, метод, результаты, ограничения, что значит для пациентов, ссылка на оригинал.
-3. Объём: 400-600 слов.
-4. Дисклеймер в конце.
-
-Abstract:
-${abstract}`,
-      },
-    ],
-    temperature: 0.3,
-    max_tokens: 2500,
-  });
-
-  return result.choices[0]?.message?.content ?? "";
-}
-
-export async function generateTelegramPost(articleText: string): Promise<string> {
-  const result = await chatCompletion({
-    messages: [
-      { role: "system", content: "Ты — SMM-редактор медицинского Telegram-канала." },
-      {
-        role: "user",
-        content: `Напиши пост для Telegram (макс. 800 символов) на основе статьи:\n\n${articleText.slice(0, 2000)}`,
-      },
-    ],
-    temperature: 0.5,
-    max_tokens: 800,
-  });
-
-  return result.choices[0]?.message?.content ?? "";
-}
-
-export async function generateSEOMeta(articleText: string, topic: string) {
-  const result = await chatCompletion({
-    messages: [
-      { role: "system", content: "Ты — SEO-специалист." },
-      {
-        role: "user",
-        content: `Для статьи "${topic}" сгенерируй:
-1. Title (50-60 символов)
-2. Meta description (150-160)
-3. Ключевые слова (10-15)
-
-Статья: ${articleText.slice(0, 1500)}`,
-      },
-    ],
-    temperature: 0.3,
-    max_tokens: 500,
-  });
-
-  const text = result.choices[0]?.message?.content ?? "";
-  const titleMatch = text.match(/Title:\s*(.+)/i);
-  const descMatch = text.match(/Description:\s*(.+)/i);
-  const kwMatch = text.match(/Keywords?:\s*(.+)/i);
-
-  return {
-    title: titleMatch?.[1]?.trim() ?? topic,
-    description: descMatch?.[1]?.trim() ?? `Статья о ${topic}`,
-    keywords: kwMatch?.[1]?.trim() ?? topic,
-  };
 }

@@ -11,6 +11,39 @@ export interface GeneratedContent {
   sources: (PubMedArticle | CrossRefArticle)[];
 }
 
+function markdownToHtml(md: string): string {
+  let html = md;
+  if (html.includes("<h2>") || html.includes("<p>")) return html;
+  html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+  html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/__(.+?)__/g, "<strong>$1</strong>");
+  const lines = html.split("\n");
+  let inList = false;
+  const result: string[] = [];
+  for (const line of lines) {
+    if (line.match(/^[-*] /)) {
+      const content = line.replace(/^[-*] /, "");
+      if (!inList) { result.push("<ul>"); inList = true; }
+      result.push(`<li>${content}</li>`);
+    } else {
+      if (inList) { result.push("</ul>"); inList = false; }
+      result.push(line);
+    }
+  }
+  if (inList) result.push("</ul>");
+  html = result.join("\n");
+  const paragraphs = html.split(/\n\n+/);
+  html = paragraphs.map(p => {
+    const trimmed = p.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("<h") || trimmed.startsWith("<ul>") || trimmed.startsWith("<li>")) return trimmed;
+    return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
+  }).filter(Boolean).join("\n");
+  return html;
+}
+
 function stripEmoji(text: string): string {
   return text.split("").filter(char => {
     const code = char.codePointAt(0);
@@ -60,41 +93,102 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   const allArticles = dedupeArticles([...rawPubmed, ...crossrefArticles]).slice(0, 5);
 
   const abstractsText = allArticles.length > 0
-    ? allArticles.map((a, i) => `Источник ${i + 1}: ${a.title} (${a.journal}). Abstract: ${a.abstract}`).join("\n")
+    ? allArticles.map((a, i) => `--- Источник ${i + 1} ---\nЗаголовок: ${a.title}\nЖурнал: ${a.journal}, ${a.pubDate}\nAbstract: ${a.abstract}`).join("\n\n")
     : "Научные статьи не найдены. Пиши на основе клинического опыта.";
 
-  // ЕДИНСТВЕННЫЙ ЗАПРОС К GIGACHAT
-  const systemPrompt = `Ты — врач-невролог Гурьянова Валентина Андреевна. Пиши статью для блога. Тон: профессиональный, без рекламы ("запишитесь", "чудо"), без эмодзи. Формат: HTML (<h2>, <p>, <ul>, <li>).`;
+  const systemPrompt = `Ты — врач-невролог Гурьянова Валентина Андреевна, выпускница 1-го МГМУ им. Сеченова (1977), 49 лет клинической практики. Специализация: неврология, рефлексотерапия, гирудотерапия, остеопатия.
 
-  const userPrompt = `Тема: ${topic}\nИсточники:\n${abstractsText}\n\nСгенерируй ответ строго в формате JSON:\n{\n  "title": "Заголовок (50-70 символов)",\n  "excerpt": "Описание (150 символов)",\n  "keywords": ["ключ1", "ключ2"],\n  "content": "<h2>Введение</h2><p>Текст статьи...</p>",\n  "telegramPost": "Короткий пост для Telegram"\n}`;
+Ты пишешь медицинскую статью для блога. Читатели — пациенты и коллеги-врачи. Тон — профессиональный, экспертный.
+
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ рекламные обороты:
+- "запишитесь на консультацию"
+- "бесплатная консультация"
+- "прямо сейчас"
+- "не упускайте"
+- "сделайте первый шаг"
+- "избавьтесь от"
+- "чудо-терапия", "чудо-метод"
+- "уникальный метод"
+- "не откладывайте"
+- "верните здоровье"
+
+Пиши как врач в медицинском журнале, не как маркетолог.
+
+ЗАПРЕЩЕНО: эмодзи, спецсимволы (→, ✓, ★), псевдонаука ("энергетические меридианы").
+
+Разрешено: от первого лица ("В клинической практике..."), ссылки на исследования ("Согласно исследованию...").
+
+СТРУКТУРА:
+1. Введение
+2. Этиология и патогенез
+3. Клинические проявления
+4. Диагностика
+5. Методы лечения (с доказательной базой)
+6. Показания и противопоказания
+7. Практические рекомендации
+8. Заключение (без рекламных призывов)
+
+ФОРМАТ: HTML (<h2>, <p>, <ul>, <li>, <strong>). НЕ Markdown. НЕ эмодзи.
+Дисклеймер: "Информация носит образовательный характер и не заменяет консультацию врача."`;
+
+  const userPrompt = `Тема: ${topic}\n\nНаучные источники:\n${abstractsText}\n\nНапиши профессиональную медицинскую статью. 2000-3000 слов. БЕЗ рекламы. БЕЗ эмодзи.`;
 
   const result = await chatCompletion({
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.3,
-    max_tokens: 3000, // Немного уменьшили для скорости
+    temperature: 0.2,
+    max_tokens: 4000,
   });
 
-  let rawText = result.choices[0]?.message?.content ?? "";
-
-  // Чистим от возможных markdown обёрток
-  rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-
-  let parsed: any;
-  try {
-    parsed = JSON.parse(rawText);
-  } catch (e) {
-    console.error("[pipeline] JSON parse failed, fallback");
-    parsed = { title: topic, excerpt: "Описание", keywords: [topic], content: rawText, telegramPost: "" };
+  let content = result.choices[0]?.message?.content ?? "";
+  if (!content.includes("<h2>") && !content.includes("<p>")) {
+    content = markdownToHtml(content);
   }
+  content = stripEmoji(content);
 
-  const title = stripEmoji(parsed.title || topic);
-  const excerpt = stripEmoji(parsed.excerpt || `Статья о ${topic}`);
-  const keywords = (parsed.keywords || [topic]).map((k: string) => stripEmoji(k));
-  let content = stripEmoji(parsed.content || "");
-  const telegramPost = stripEmoji(parsed.telegramPost || "");
+  const metaResult = await chatCompletion({
+    messages: [
+      { role: "system", content: "Ты — медицинский редактор. Профессиональные заголовки, НЕ рекламные, НЕ кликбейт." },
+      { role: "user", content: `Для статьи "${topic}" создай:
+TITLE (50-70 символов, профессиональный)
+DESCRIPTION (150-170 символов, информативный)
+KEYWORDS (5-7 через запятую)
+
+Формат:
+TITLE: ...
+DESCRIPTION: ...
+KEYWORDS: ...` },
+    ],
+    temperature: 0.3,
+    max_tokens: 500,
+  });
+
+  const metaText = metaResult.choices[0]?.message?.content ?? "";
+  const titleMatch = metaText.match(/TITLE:\s*(.+)/i);
+  const descMatch = metaText.match(/DESCRIPTION:\s*(.+)/i);
+  const kwMatch = metaText.match(/KEYWORDS:\s*(.+)/i);
+
+  const title = titleMatch?.[1]?.trim() || topic;
+  const excerpt = descMatch?.[1]?.trim() || `Профессиональный разбор: ${topic}`;
+  const keywords = kwMatch?.[1]?.split(/[,;]/).map((k: string) => k.trim()).filter(Boolean).slice(0, 7) || [topic];
+
+  const tgResult = await chatCompletion({
+    messages: [
+      { role: "system", content: "Ты — врач, ведёшь профессиональный Telegram-канал. Экспертный тон. БЕЗ рекламы. БЕЗ эмодзи. БЕЗ 'запишитесь', 'бесплатная', 'прямо сейчас'." },
+      { role: "user", content: `Напиши пост для Telegram (800-1200 символов). Тема: ${topic}
+
+Экспертный тон. Кратко: о чём тема, что показывают исследования, практический вывод.
+В конце: "Подробнее на сайте" и ссылка — ненавязчиво.
+
+Статья: ${content.slice(0, 3000)}` },
+    ],
+    temperature: 0.4,
+    max_tokens: 1500,
+  });
+
+  const telegramPost = stripEmoji(tgResult.choices[0]?.message?.content ?? "");
 
   const slug = slugify(title);
   const now = new Date().toISOString().split("T")[0];
@@ -116,8 +210,10 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
 
 function generateSourcesBlock(articles: (PubMedArticle | CrossRefArticle)[]): string {
   if (articles.length === 0) return "";
-  const sources = articles.map(a => `<li><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a></li>`).join("");
-  return `<h2>Источники</h2><ul>${sources}</ul>`;
+  const sources = articles.map(a =>
+    `<li><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a> — ${a.journal}, ${a.pubDate}</li>`
+  ).join("");
+  return `\n<h2>Источники</h2>\n<ul>${sources}</ul>`;
 }
 
 export async function generateArticleByKeyword(keyword: string): Promise<GeneratedContent> {
