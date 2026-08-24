@@ -181,7 +181,7 @@ export default function BookingForm() {
     <section id="booking" className="max-w-3xl mx-auto px-6 py-16">
       <div className="bg-cream rounded-3xl shadow-xl shadow-slate-200/30 border border-charcoal/5 overflow-hidden">
         <div className="bg-charcoal p-8 text-cream">
-          <p className="text-xs font-semibold text-teal-400 uppercase tracking-widest mb-2">Запись на приём</p>
+          <p className="text-xs font-semibold text-gold uppercase tracking-widest mb-2">Запись на приём</p>
           <h3 className="text-2xl font-bold mb-2">Запишитесь на онлайн-консультацию</h3>
           <p className="text-charcoal/40 text-sm">Подтверждение придёт в SMS и Telegram</p>
         </div>
