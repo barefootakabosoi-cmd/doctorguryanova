@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { blogPosts } from "@/lib/blog-data";
+import { getAllPosts } from "@/lib/blog-data";
 import Navbar from "@/components/Navbar"
 import Hero from "@/components/Hero"
 import Methods from "@/components/Methods"
@@ -9,8 +9,8 @@ import Reviews from "@/components/Reviews"
 import SEOSections from "@/components/SEOSections"
 import Footer from "@/components/Footer"
 
-export default function Home() {
-  const posts = blogPosts;
+export default async function Home() {
+  const posts = await getAllPosts();
   return (
     <main className="min-h-screen bg-cream text-charcoal">
       <Navbar />

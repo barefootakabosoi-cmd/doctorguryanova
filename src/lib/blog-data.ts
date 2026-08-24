@@ -66,7 +66,12 @@ export async function getAllPosts(): Promise<BlogPost[]> {
     }
 
     const allSlugs = new Set(kvPosts.map(p => p.slug));
-    return [...kvPosts, ...staticPosts.filter(p => !allSlugs.has(p.slug))];
+    const combined = [...kvPosts, ...staticPosts.filter(p => !allSlugs.has(p.slug))];
+    
+    // Сортируем по дате публикации (новые сверху)
+    combined.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+    
+    return combined;
   } catch (error) {
     console.error("getAllPosts error:", error);
     return staticPosts;
