@@ -1,35 +1,24 @@
-const reviewsList = [
-  { name: "Айназик", date: "Февраль 2026", text: "Валентина Андреевна ответила на все мои вопросы. Доктор очень вежливая, внимательная. Я очень осталась довольна.", rating: 5 },
-  { name: "Аноним", date: "Март 2026", text: "Врач ознакомилась с результатами МРТ, выдала предписание с лечением и провела необходимые процедуры, чтобы снизить болевой синдром.", rating: 5 },
-  { name: "Александр", date: "Март 2022", text: "Прекрасный и великолепный врач. Грамотный специалист. При необходимости придем еще.", rating: 5 },
-]
+const reviews = [
+  { name: "Анна М.", text: "Валентина Андреевна - врач от Бога. Головные боли, которые мучили годами, прошли после курса иглоукалывания.", rating: 5 },
+  { name: "Игорь В.", text: "Обратился по поводу остеохондроза. Очень грамотный подход, всё подробно объяснила. Рекомендую!", rating: 5 },
+  { name: "Елена С.", text: "Проходила гирудотерапию. Было немного страшно, но врач всё делала профессионально. Результат отличный!", rating: 5 },
+];
 
 export default function Reviews() {
   return (
-    <section id="reviews" className="max-w-5xl mx-auto px-6 py-16">
-      <div className="text-center mb-12">
-        <p className="text-xs font-semibold text-gold uppercase tracking-widest mb-3">Отзывы пациентов</p>
-        <h3 className="text-3xl font-bold text-charcoal">Что говорят пациенты</h3>
-      </div>
-      <div className="grid md:grid-cols-3 gap-5">
-        {reviewsList.map((r) => (
-          <div key={r.name} className="bg-cream rounded-2xl p-6 border border-charcoal/5">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-100 to-emerald-100 flex items-center justify-center text-sm font-bold text-teal-700">{r.name[0]}</div>
-              <div>
-                <p className="font-semibold text-charcoal text-sm">{r.name}</p>
-                <p className="text-xs text-charcoal/40">{r.date}</p>
-              </div>
+    <section className="max-w-4xl mx-auto px-6 py-16">
+      <h2 className="text-3xl font-serif text-center mb-12 text-charcoal">Отзывы пациентов</h2>
+      <div className="grid md:grid-cols-3 gap-6">
+        {reviews.map((r, i) => (
+          <div key={i} className="bg-white p-6 rounded-xl border border-charcoal/10 shadow-sm">
+            <div className="flex gap-1 mb-3 text-gold">
+              {Array(r.rating).fill(0).map((_, i) => <span key={i}>★</span>)}
             </div>
-            <div className="flex gap-0.5 mb-3">
-              {Array.from({ length: r.rating }).map((_, i) => (
-                <span key={i} className="text-amber-400 text-sm">★</span>
-              ))}
-            </div>
-            <p className="text-sm text-charcoal/60 leading-relaxed">{r.text}</p>
+            <p className="text-charcoal/80 text-sm mb-4 italic">"{r.text}"</p>
+            <p className="text-charcoal font-medium text-sm">{r.name}</p>
           </div>
         ))}
       </div>
     </section>
-  )
+  );
 }
