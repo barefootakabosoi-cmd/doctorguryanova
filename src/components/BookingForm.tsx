@@ -183,7 +183,7 @@ export default function BookingForm() {
         <div className="bg-charcoal p-8 text-cream rounded-t-3xl">
           <p className="text-xs font-semibold text-gold uppercase tracking-widest mb-2">Запись на приём</p>
           <h3 className="text-2xl font-bold mb-2">Запишитесь на онлайн-консультацию</h3>
-          <p className="text-cream/60 text-sm">Подтверждение придёт на email и в Telegram</p>
+          <p className="text-cream/60 text-sm">Подтверждение и ссылку на консультацию отправим на email</p>
         </div>
         <div className="p-8">
           {step === 1 && (
