@@ -1,3 +1,5 @@
+import Navbar from "@/components/Navbar"
+import Footer from "@/components/Footer"
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -36,6 +38,8 @@ export default async function PostPage({ params }: PageProps) {
   }
 
   return (
+    <>
+    <Navbar />
     <main className="max-w-3xl mx-auto px-6 py-12">
       <Link href="/blog" className="text-sm text-charcoal/50 hover:text-gold transition-colors mb-6 inline-block">
         ← Все статьи
@@ -89,5 +93,7 @@ export default async function PostPage({ params }: PageProps) {
         </div>
       </article>
     </main>
+    <Footer />
+    </>
   );
 }

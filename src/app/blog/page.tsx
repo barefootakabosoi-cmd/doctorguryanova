@@ -1,3 +1,5 @@
+import Navbar from "@/components/Navbar"
+import Footer from "@/components/Footer"
 import { Metadata } from "next";
 import Link from "next/link";
 import { getAllPosts } from "@/lib/blog-data";
@@ -13,6 +15,8 @@ export default async function BlogPage() {
   const posts = await getAllPosts();
 
   return (
+    <>
+    <Navbar />
     <main className="max-w-4xl mx-auto px-6 py-12">
       <h1 className="text-4xl font-serif text-charcoal mb-2">Блог невролога</h1>
       <p className="text-charcoal/60 mb-10">
@@ -61,5 +65,7 @@ export default async function BlogPage() {
         <p className="text-charcoal/50 text-center py-12">Статьи скоро появятся.</p>
       )}
     </main>
+    <Footer />
+    </>
   );
 }
