@@ -12,7 +12,7 @@ export default function Hero() {
         </span>
 
         <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-serif text-charcoal mb-6 leading-tight">
-          Неврология и рефлексотерапия <span className="text-gold">без боли и таблеток</span>
+          Неврология и рефлексотерапия <br className="hidden md:block" /><span className="text-gold">без боли и таблеток</span>
         </h1>
 
         <p className="text-base sm:text-lg md:text-xl text-charcoal/60 max-w-2xl mx-auto mb-10 leading-relaxed">
