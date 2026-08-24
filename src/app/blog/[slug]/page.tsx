@@ -1,4 +1,3 @@
-// src/app/blog/[slug]/page.tsx
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -37,39 +36,14 @@ export default async function PostPage({ params }: PageProps) {
   }
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-12">
-      <Link href="/blog" className="text-sm text-charcoal/50 hover:text-slate-700 mb-6 inline-block">
+    <main className="max-w-3xl mx-auto px-6 py-12">
+      <Link href="/blog" className="text-sm text-charcoal/50 hover:text-gold transition-colors mb-6 inline-block">
         ← Все статьи
       </Link>
 
-      
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "MedicalWebPage",
-              "headline": post.title,
-              "description": post.excerpt,
-              "datePublished": post.publishedAt,
-              "dateModified": post.updatedAt,
-              "author": {
-                "@type": "Physician",
-                "name": "Гурьянова Валентина Андреевна",
-                "url": "https://doctorguryanova.ru"
-              },
-              "keywords": post.keywords.join(", "),
-              "mainEntityOfPage": {
-                "@type": "WebPage",
-                "@id": `https://doctorguryanova.ru/blog/${post.slug}`
-              }
-            })
-          }}
-        />
-
       <article>
         <div className="flex items-center gap-2 text-sm text-charcoal/50 mb-4">
-          <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
+          <span className="bg-gold/10 text-gold-dark px-2 py-0.5 rounded font-medium">
             {post.type === "seo" && "Статья"}
             {post.type === "research" && "Научный обзор"}
             {post.type === "faq" && "FAQ"}
@@ -80,7 +54,7 @@ export default async function PostPage({ params }: PageProps) {
           <span>{post.publishedAt.split("-").reverse().join(".")}</span>
         </div>
 
-        <h1 className="text-3xl font-bold text-charcoal mb-4">{post.title}</h1>
+        <h1 className="text-4xl font-serif text-charcoal mb-4">{post.title}</h1>
         <p className="text-lg text-charcoal/60 mb-8">{post.excerpt}</p>
 
         <div
@@ -88,28 +62,28 @@ export default async function PostPage({ params }: PageProps) {
           dangerouslySetInnerHTML={{ __html: post.content }}
         />
 
-        <div className="flex flex-wrap gap-2 mt-8 pt-8 border-t">
+        <div className="flex flex-wrap gap-2 mt-8 pt-8 border-t border-charcoal/10">
           {post.keywords.map((kw) => (
-            <span key={kw} className="text-xs text-charcoal/50 bg-slate-100 px-2 py-1 rounded">
+            <span key={kw} className="text-xs text-charcoal/50 bg-charcoal/5 px-2 py-1 rounded">
               {kw}
             </span>
           ))}
         </div>
 
-        <div className="mt-8 p-6 bg-gold/5 rounded-lg text-center">
-          <p className="text-slate-700 mb-4">
+        <div className="mt-8 p-6 bg-gold/5 rounded-lg text-center border border-gold/20">
+          <p className="text-charcoal mb-4">
             Нужна консультация невролога с 49-летним опытом?
           </p>
           <Link
             href="/#booking"
-            className="inline-block bg-teal-600 text-cream px-6 py-3 rounded-lg font-medium hover:bg-teal-700"
+            className="inline-block bg-charcoal text-cream px-6 py-3 rounded-full font-medium hover:bg-gold transition-all duration-300"
           >
             Записаться на приём
           </Link>
         </div>
 
-        <div className="mt-6 p-4 bg-amber-50 border-l-4 border-amber-400 rounded">
-          <p className="text-sm text-amber-800">
+        <div className="mt-6 p-4 bg-charcoal/5 border-l-4 border-gold rounded">
+          <p className="text-sm text-charcoal/70">
             <strong>Важно:</strong> Информация носит образовательный характер и не заменяет консультацию врача.
           </p>
         </div>
