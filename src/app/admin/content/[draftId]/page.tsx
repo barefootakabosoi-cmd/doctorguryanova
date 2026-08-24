@@ -117,10 +117,10 @@ export default function EditDraftPage() {
           <button onClick={handleSave} disabled={saving} className="bg-slate-200 text-slate-700 px-6 py-2 rounded font-medium hover:bg-slate-300 disabled:opacity-50">
             {saving ? "Сохранение..." : "Сохранить"}
           </button>
-          <button onClick={handlePublish} disabled={publishing} className="bg-emerald-600 text-white px-6 py-2 rounded font-medium hover:bg-emerald-700 disabled:opacity-50">
+          <button onClick={handlePublish} disabled={publishing} className="bg-emerald-600 text-cream px-6 py-2 rounded font-medium hover:bg-emerald-700 disabled:opacity-50">
             {publishing ? "Публикация..." : "Опубликовать на сайт + в Telegram"}
           </button>
-          <a href="/admin/content" className="px-6 py-2 text-slate-600 hover:text-slate-900">← Назад</a>
+          <a href="/admin/content" className="px-6 py-2 text-charcoal/60 hover:text-charcoal">← Назад</a>
         </div>
       </div>
     </main>

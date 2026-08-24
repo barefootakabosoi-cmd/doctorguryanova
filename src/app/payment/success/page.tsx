@@ -40,42 +40,42 @@ function SuccessContent() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-teal-50/30 flex items-center justify-center px-6">
-      <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/30 border border-slate-100 p-10 max-w-md w-full text-center">
+      <div className="bg-cream rounded-3xl shadow-xl shadow-slate-200/30 border border-charcoal/5 p-10 max-w-md w-full text-center">
         <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
           <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-slate-900 mb-3">
+        <h1 className="text-2xl font-bold text-charcoal mb-3">
           {noPayment ? "Запись подтверждена!" : "Оплата подтверждена!"}
         </h1>
-        <p className="text-slate-500 mb-2">
+        <p className="text-charcoal/50 mb-2">
           {noPayment
             ? "Ваша запись создана. Мы свяжемся с вами для уточнения оплаты."
             : "Запись создано. Ссылка на видеоконсультацию — ниже на этой странице."}
         </p>
         {paymentId && (
-          <p className="text-xs text-slate-400 mb-6 font-mono">ID брони: {paymentId}</p>
+          <p className="text-xs text-charcoal/40 mb-6 font-mono">ID брони: {paymentId}</p>
         )}
 
         {loading && !noPayment && (
           <div className="bg-slate-50 rounded-xl p-5 text-left space-y-3 text-sm mb-6">
-            <p className="text-slate-600">⏳ Генерируем ссылку на видеоконсультацию...</p>
+            <p className="text-charcoal/60">⏳ Генерируем ссылку на видеоконсультацию...</p>
           </div>
         )}
 
         {jitsiLink && (
-          <div className="bg-teal-50 rounded-xl p-5 text-left space-y-3 text-sm mb-6 border border-teal-100">
-            <p className="text-teal-800 font-medium">🔗 Ссылка на консультацию:</p>
+          <div className="bg-gold/5 rounded-xl p-5 text-left space-y-3 text-sm mb-6 border border-gold/10">
+            <p className="text-gold-dark font-medium">🔗 Ссылка на консультацию:</p>
             <a
               href={jitsiLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="block bg-teal-600 text-white text-center px-6 py-3 rounded-xl font-semibold hover:bg-teal-700 transition-all break-all"
+              className="block bg-teal-600 text-cream text-center px-6 py-3 rounded-xl font-semibold hover:bg-teal-700 transition-all break-all"
             >
               Присоединиться к консультации
             </a>
-            <p className="text-teal-600 text-xs">
+            <p className="text-gold text-xs">
               Откройте за 5 минут до начала. Разрешите доступ к камере и микрофону.
             </p>
           </div>
@@ -90,7 +90,7 @@ function SuccessContent() {
           </div>
         )}
 
-        <a href="/" className="inline-block bg-slate-900 text-white px-7 py-3 rounded-xl text-sm font-semibold hover:bg-slate-800 transition-all">
+        <a href="/" className="inline-block bg-charcoal text-cream px-7 py-3 rounded-xl text-sm font-semibold hover:bg-charcoal/80 transition-all">
           Вернуться на сайт
         </a>
       </div>
@@ -102,7 +102,7 @@ export default function SuccessPage() {
   return (
     <Suspense fallback={
       <main className="min-h-screen flex items-center justify-center">
-        <div className="text-slate-400">Загрузка...</div>
+        <div className="text-charcoal/40">Загрузка...</div>
       </main>
     }>
       <SuccessContent />

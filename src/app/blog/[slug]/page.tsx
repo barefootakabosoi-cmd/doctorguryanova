@@ -38,7 +38,7 @@ export default async function PostPage({ params }: PageProps) {
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-12">
-      <Link href="/blog" className="text-sm text-slate-500 hover:text-slate-700 mb-6 inline-block">
+      <Link href="/blog" className="text-sm text-charcoal/50 hover:text-slate-700 mb-6 inline-block">
         ← Все статьи
       </Link>
 
@@ -68,7 +68,7 @@ export default async function PostPage({ params }: PageProps) {
         />
 
       <article>
-        <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
+        <div className="flex items-center gap-2 text-sm text-charcoal/50 mb-4">
           <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
             {post.type === "seo" && "Статья"}
             {post.type === "research" && "Научный обзор"}
@@ -80,8 +80,8 @@ export default async function PostPage({ params }: PageProps) {
           <span>{post.publishedAt.split("-").reverse().join(".")}</span>
         </div>
 
-        <h1 className="text-3xl font-bold text-slate-900 mb-4">{post.title}</h1>
-        <p className="text-lg text-slate-600 mb-8">{post.excerpt}</p>
+        <h1 className="text-3xl font-bold text-charcoal mb-4">{post.title}</h1>
+        <p className="text-lg text-charcoal/60 mb-8">{post.excerpt}</p>
 
         <div
           className="prose prose-slate max-w-none article-content"
@@ -90,19 +90,19 @@ export default async function PostPage({ params }: PageProps) {
 
         <div className="flex flex-wrap gap-2 mt-8 pt-8 border-t">
           {post.keywords.map((kw) => (
-            <span key={kw} className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+            <span key={kw} className="text-xs text-charcoal/50 bg-slate-100 px-2 py-1 rounded">
               {kw}
             </span>
           ))}
         </div>
 
-        <div className="mt-8 p-6 bg-teal-50 rounded-lg text-center">
+        <div className="mt-8 p-6 bg-gold/5 rounded-lg text-center">
           <p className="text-slate-700 mb-4">
             Нужна консультация невролога с 49-летним опытом?
           </p>
           <Link
             href="/#booking"
-            className="inline-block bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700"
+            className="inline-block bg-teal-600 text-cream px-6 py-3 rounded-lg font-medium hover:bg-teal-700"
           >
             Записаться на приём
           </Link>

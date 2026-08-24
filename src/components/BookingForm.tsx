@@ -179,11 +179,11 @@ export default function BookingForm() {
 
   return (
     <section id="booking" className="max-w-3xl mx-auto px-6 py-16">
-      <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/30 border border-slate-100 overflow-hidden">
-        <div className="bg-slate-900 p-8 text-white">
+      <div className="bg-cream rounded-3xl shadow-xl shadow-slate-200/30 border border-charcoal/5 overflow-hidden">
+        <div className="bg-charcoal p-8 text-cream">
           <p className="text-xs font-semibold text-teal-400 uppercase tracking-widest mb-2">Запись на приём</p>
           <h3 className="text-2xl font-bold mb-2">Запишитесь на онлайн-консультацию</h3>
-          <p className="text-slate-400 text-sm">Подтверждение придёт в SMS и Telegram</p>
+          <p className="text-charcoal/40 text-sm">Подтверждение придёт в SMS и Telegram</p>
         </div>
         <div className="p-8">
           {step === 1 && (
@@ -193,7 +193,7 @@ export default function BookingForm() {
                 <select
                   value={direction}
                   onChange={(e) => handleDirectionChange(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 bg-white text-sm"
+                  className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 bg-cream text-sm"
                 >
                   <option value="">Выберите направление</option>
                   <option value="nevro">Неврология — головные боли, остеохондроз</option>
@@ -212,7 +212,7 @@ export default function BookingForm() {
                     type="date"
                     min={today || "1900-01-01"}
                     {...register("date")}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 text-sm"
+                    className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 text-sm"
                   />
                   {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date.message}</p>}
                 </div>
@@ -220,7 +220,7 @@ export default function BookingForm() {
                   <label className="block text-sm font-medium text-slate-700 mb-2">Время</label>
                   <select
                     {...register("time")}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 bg-white text-sm"
+                    className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 bg-cream text-sm"
                   >
                     <option value="">Выберите время</option>
                     {availableTimes.map((t) => (
@@ -235,22 +235,22 @@ export default function BookingForm() {
                 <textarea
                   {...register("symptoms")}
                   rows={3}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 resize-none text-sm"
+                  className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 resize-none text-sm"
                   placeholder="Например: головные боли в затылке, шум в ушах..."
                 />
               </div>
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-between pt-4 border-t border-charcoal/5">
                 <div>
-                  <p className="text-xs text-slate-400 uppercase tracking-wide">Стоимость</p>
-                  <p className="text-3xl font-bold text-slate-900">{price || "—"}</p>
+                  <p className="text-xs text-charcoal/40 uppercase tracking-wide">Стоимость</p>
+                  <p className="text-3xl font-bold text-charcoal">{price || "—"}</p>
                 </div>
                 <button
                   onClick={() => setStep(2)}
                   disabled={!canProceed}
                   className={`px-8 py-3 rounded-xl font-semibold text-sm transition-all duration-300 ${
                     canProceed
-                      ? "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-900/10 active:scale-[0.98]"
-                      : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                      ? "bg-charcoal text-cream hover:bg-charcoal/80 shadow-lg shadow-slate-900/10 active:scale-[0.98]"
+                      : "bg-slate-100 text-charcoal/40 cursor-not-allowed"
                   }`}
                 >
                   Продолжить
@@ -267,7 +267,7 @@ export default function BookingForm() {
                   <input
                     type="text"
                     {...register("name")}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 text-sm"
+                    className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 text-sm"
                     placeholder="Имя"
                   />
                   {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
@@ -277,7 +277,7 @@ export default function BookingForm() {
                   <input
                     type="tel"
                     {...register("phone")}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 text-sm"
+                    className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 text-sm"
                     placeholder="+7 (999) 000-00-00"
                   />
                   {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
@@ -288,7 +288,7 @@ export default function BookingForm() {
                 <input
                   type="email"
                   {...register("email")}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all duration-200 text-sm"
+                  className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 text-sm"
                   placeholder="email@example.com"
                 />
                 {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
@@ -299,11 +299,11 @@ export default function BookingForm() {
                   type="checkbox"
                   id="consent"
                   {...register("consent")}
-                  className="mt-1 w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  className="mt-1 w-4 h-4 rounded border-slate-300 text-gold focus:ring-teal-500"
                 />
-                <label htmlFor="consent" className="text-sm text-slate-600 leading-relaxed">
+                <label htmlFor="consent" className="text-sm text-charcoal/60 leading-relaxed">
                   Я согласен на обработку персональных данных в соответствии с{" "}
-                  <a href="/privacy/" className="text-teal-600 hover:underline" target="_blank">
+                  <a href="/privacy/" className="text-gold hover:underline" target="_blank">
                     политикой конфиденциальности
                   </a>
                 </label>
@@ -327,14 +327,14 @@ export default function BookingForm() {
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="text-slate-500 hover:text-slate-800 font-medium text-sm transition-colors duration-300"
+                  className="text-charcoal/50 hover:text-slate-800 font-medium text-sm transition-colors duration-300"
                 >
                   ← Назад
                 </button>
                 <button
                   type="submit"
                   disabled={loading || !name || !phone}
-                  className="bg-slate-900 text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-slate-800 transition-all duration-300 shadow-lg shadow-slate-900/10 active:scale-[0.98] disabled:opacity-50"
+                  className="bg-charcoal text-cream px-8 py-3 rounded-xl font-semibold text-sm hover:bg-charcoal/80 transition-all duration-300 shadow-lg shadow-slate-900/10 active:scale-[0.98] disabled:opacity-50"
                 >
                   {loading ? "Создаём запись..." : "Записаться и оплатить"}
                 </button>

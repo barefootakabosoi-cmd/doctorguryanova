@@ -16,7 +16,7 @@ export default async function BlogPage() {
   return (
     <main className="max-w-4xl mx-auto px-4 py-12">
       <h1 className="text-3xl font-bold mb-2">Блог невролога</h1>
-      <p className="text-slate-600 mb-8">
+      <p className="text-charcoal/60 mb-8">
         Полезные статьи о неврологии, рефлексотерапии, гирудотерапии и остеопатии
         от <strong>Гурьяновой Валентины Андреевны</strong> — врача-невролога с{" "}
         <strong>49-летним стажем</strong>.
@@ -26,9 +26,9 @@ export default async function BlogPage() {
         {posts.map((post) => (
           <article
             key={post.slug}
-            className="border border-slate-200 rounded-lg p-6 hover:shadow-md transition-shadow"
+            className="border border-charcoal/10 rounded-lg p-6 hover:shadow-md transition-shadow"
           >
-            <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
+            <div className="flex items-center gap-2 text-sm text-charcoal/50 mb-2">
               <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
                 {post.type === "seo" && "Статья"}
                 {post.type === "research" && "Научный обзор"}
@@ -41,15 +41,15 @@ export default async function BlogPage() {
             </div>
 
             <Link href={`/blog/${post.slug}`} className="block group">
-              <h2 className="text-xl font-semibold text-slate-900 group-hover:text-emerald-700 mb-2">
+              <h2 className="text-xl font-semibold text-charcoal group-hover:text-emerald-700 mb-2">
                 {post.title}
               </h2>
-              <p className="text-slate-600">{post.excerpt}</p>
+              <p className="text-charcoal/60">{post.excerpt}</p>
             </Link>
 
             <div className="flex flex-wrap gap-2 mt-3">
               {post.keywords.slice(0, 3).map((kw) => (
-                <span key={kw} className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                <span key={kw} className="text-xs text-charcoal/50 bg-slate-100 px-2 py-1 rounded">
                   {kw}
                 </span>
               ))}
@@ -59,7 +59,7 @@ export default async function BlogPage() {
       </div>
 
       {posts.length === 0 && (
-        <p className="text-slate-500 text-center py-12">Статьи скоро появятся.</p>
+        <p className="text-charcoal/50 text-center py-12">Статьи скоро появятся.</p>
       )}
     </main>
   );

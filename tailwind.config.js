@@ -12,9 +12,9 @@ module.exports = {
           DEFAULT: '#C5A059',
           dark: '#A6841F',
           light: '#E5D5A8'
-        }
+        },
       },
     },
   },
-  plugins: [require('@tailwindcss/typography')],
+  plugins: [],
 }

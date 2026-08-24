@@ -14,7 +14,7 @@ export default function Methods() {
           <a 
             key={m.title} 
             href={m.href} 
-            className="group p-6 bg-white rounded-xl border border-gold/20 hover:border-gold hover:shadow-lg transition-all duration-300"
+            className="group p-6 bg-cream rounded-xl border border-gold/20 hover:border-gold hover:shadow-lg transition-all duration-300"
           >
             <h3 className="text-xl font-serif text-charcoal mb-3 group-hover:text-gold transition-colors">{m.title}</h3>
             <p className="text-sm text-charcoal/70">{m.desc}</p>

@@ -16,14 +16,14 @@ export default function Page() {
   return (
     <main className="max-w-4xl mx-auto px-4 py-12">
       <article className="prose prose-slate max-w-none">
-        <h1 className="text-3xl font-bold text-slate-900 mb-6">Онлайн-консультация невролога</h1>
+        <h1 className="text-3xl font-bold text-charcoal mb-6">Онлайн-консультация невролога</h1>
         
         <div className="article-content" dangerouslySetInnerHTML={{ __html: '<p>Неврология — это область медицины, связанная с диагностикой и лечением заболеваний центральной и периферической нервной системы. Онлайн-консультация невролога позволяет получить экспертное медицинское заключение без необходимости посещения клиники, что особенно важно для пациентов из регионов и с ограниченной мобильностью.</p><h2>С какими симптомами обращаются к неврологу онлайн</h2><ul><li><strong>Головные боли и мигрени</strong> — хронические боли, влияющие на качество жизни.</li><li><strong>Головокружения и нарушение координации</strong> — частые симптомы шейного остеохондроза или проблем с сосудами.</li><li><strong>Боли в спине и шее</strong> — остеохондроз, радикулит, протрузии и грыжи дисков.</li><li><strong>Онемение конечностей</strong> — покалывание, снижение чувствительности (признаки защемления нервов).</li><li><strong>Шум в ушах</strong> — часто связан с сосудистыми или мышечными спазмами.</li><li><strong>Нарушения сна и хроническая усталость</strong> — неврологические проявления стресса.</li></ul><h2>Как проходит онлайн-приём</h2><p>Консультация проводится через видеосвязь (Jitsi Meet). На приёме врач собирает полный анамнез, анализирует симптомы, изучает обследования (МРТ, КТ) и ставит предварительный диагноз.</p>' }} />
 
-        <div className="mt-10 p-6 bg-teal-50 rounded-lg text-center">
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Нужна консультация?</h2>
-          <p className="text-slate-600 mb-4">Запишитесь на онлайн-приём к врачу с 49-летним стажем.</p>
-          <Link href="/#booking" className="inline-block bg-teal-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-colors">
+        <div className="mt-10 p-6 bg-gold/5 rounded-lg text-center">
+          <h2 className="text-xl font-bold text-charcoal mb-2">Нужна консультация?</h2>
+          <p className="text-charcoal/60 mb-4">Запишитесь на онлайн-приём к врачу с 49-летним стажем.</p>
+          <Link href="/#booking" className="inline-block bg-teal-600 text-cream px-6 py-3 rounded-lg font-medium hover:bg-teal-700 transition-colors">
             Записаться на приём
           </Link>
         </div>
