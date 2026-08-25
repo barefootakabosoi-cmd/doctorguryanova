@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
+import sanitizeHtml from "sanitize-html";
+import { slugify, calculateReadTime } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,23 +11,7 @@ const redis = new Redis({
   token: process.env.KV_REST_API_TOKEN || "",
 });
 
-function slugify(text: string): string {
-  const map: Record<string, string> = {
-    а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya"
-  };
-  return text.toLowerCase()
-    .replace(/[а-яё]/g, (c) => map[c] || c)
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .substring(0, 80);
-}
 
-function calculateReadTime(content: string): number {
-  const text = content.replace(/<[^>]+>/g, "");
-  const words = text.split(/\s+/).filter(Boolean).length;
-  return Math.max(3, Math.ceil(words / 200));
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,7 +35,13 @@ export async function POST(req: NextRequest) {
       slug,
       title: rawPost.title,
       excerpt: rawPost.excerpt || "",
-      content: rawPost.content,
+      content: sanitizeHtml(rawPost.content, {
+        allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "h1", "h2"],
+        allowedAttributes: {
+          ...sanitizeHtml.defaults.allowedAttributes,
+          a: ["href", "name", "target", "rel"],
+        },
+      }),
       keywords: rawPost.keywords || [],
       type: rawPost.type || "research",
       publishedAt: rawPost.publishedAt || now,

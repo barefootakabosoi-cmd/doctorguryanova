@@ -20,7 +20,7 @@ export default function Reviews() {
                 Проверенный отзыв
               </span>
             </div>
-            <p className="text-charcoal/80 text-sm mb-4 italic flex-1">"{r.text}"</p>
+            <p className="text-charcoal/80 text-sm mb-4 italic flex-1">&laquo;{r.text}&raquo;</p>
             <div className="border-t border-charcoal/10 pt-3 mt-auto">
               <p className="text-charcoal font-medium text-sm">{r.name}</p>
               <p className="text-charcoal/50 text-xs">{r.date}</p>

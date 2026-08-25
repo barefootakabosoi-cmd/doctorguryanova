@@ -1,8 +1,10 @@
 import { getPubMedArticles, type PubMedArticle } from "./pubmed";
 import { searchCrossRef, type CrossRefArticle } from "./crossref";
 import { chatCompletion } from "./gigachat";
+import sanitizeHtml from "sanitize-html";
 import { getClusterByKeyword, type KeywordCluster } from "./seo-keywords";
 import type { BlogPost } from "./blog-data";
+import { slugify, calculateReadTime } from "./utils";
 
 export interface GeneratedContent {
   post: BlogPost;
@@ -67,23 +69,7 @@ function dedupeArticles(articles: (PubMedArticle | CrossRefArticle)[]): (PubMedA
   });
 }
 
-function calculateReadTime(content: string): number {
-  const text = content.replace(/<[^>]+>/g, "");
-  const words = text.split(/\s+/).filter(Boolean).length;
-  return Math.max(3, Math.ceil(words / 200));
-}
 
-function slugify(text: string): string {
-  const map: Record<string, string> = {
-    а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya"
-  };
-  return text.toLowerCase()
-    .replace(/[а-яё]/g, (c) => map[c] || c)
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .substring(0, 80);
-}
 
 export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GeneratedContent> {
   console.log("[pipeline] Тема:", topic);
@@ -131,6 +117,14 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   let content = result.choices[0]?.message?.content ?? "";
   if (!content.includes("<h2>") && !content.includes("<p>")) {
     content = markdownToHtml(content);
+    // XSS-защита: чистим HTML от скриптов/обработчиков до сохранения черновика
+    content = sanitizeHtml(content, {
+      allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "h1", "h2"],
+      allowedAttributes: {
+        ...sanitizeHtml.defaults.allowedAttributes,
+        a: ["href", "name", "target", "rel"],
+      },
+    });
   }
   content = stripEmoji(content);
 
