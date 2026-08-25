@@ -1,5 +1,22 @@
 // src/lib/gigachat.ts
 import https from "https";
+import fs from "fs";
+import path from "path";
+
+// Корневые сертификаты Минцифры ("Русский центр доверия") — ими подписана цепочка
+// сертификатов Сбера (GigaChat). Подключаем как CA вместо rejectUnauthorized: false.
+const RU_CA: string | undefined =
+  process.env.GIGACHAT_CA_BUNDLE ??
+  (() => {
+    try {
+      return fs.readFileSync(path.join(process.cwd(), "certs", "russian-trusted-chain.pem"), "utf8");
+    } catch {
+      // Файл не найден — TLS будет проверяться системным хранилищем и упадёт с ошибкой
+      // (fail-closed), что лучше молчаливого отключения проверки.
+      console.warn("[gigachat] certs/russian-trusted-chain.pem not found; set GIGACHAT_CA_BUNDLE");
+      return undefined;
+    }
+  })();
 
 function httpsRequest(options: https.RequestOptions, body?: string): Promise<{ status: number; data: any }> {
   return new Promise((resolve, reject) => {
@@ -49,7 +66,7 @@ async function getAccessToken(): Promise<string> {
         Authorization: `Basic ${credentials}`,
         RqUID: crypto.randomUUID(),
       },
-      rejectUnauthorized: false,
+      ca: RU_CA,
     },
     new URLSearchParams({ scope: process.env.GIGACHAT_SCOPE || "GIGACHAT_API_PERS" }).toString()
   );
@@ -75,7 +92,7 @@ async function chatRequest(token: string, body: object): Promise<any> {
         Authorization: `Bearer ${token}`,
         "Content-Length": Buffer.byteLength(payload),
       },
-      rejectUnauthorized: false,
+      ca: RU_CA,
     },
     payload
   );

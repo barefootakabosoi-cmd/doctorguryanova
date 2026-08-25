@@ -14,6 +14,8 @@ export default function EditDraftPage() {
   const [content, setContent] = useState("");
   const [keywords, setKeywords] = useState("");
   const [telegramPost, setTelegramPost] = useState("");
+  const [dzenTitle, setDzenTitle] = useState("");
+  const [vcTitle, setVcTitle] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -26,6 +28,8 @@ export default function EditDraftPage() {
         setContent(data.post?.content || "");
         setKeywords(data.post?.keywords?.join(", ") || "");
         setTelegramPost(data.telegramPost || "");
+        setDzenTitle(data.titles?.dzen || data.post?.title || "");
+        setVcTitle(data.titles?.vc || data.post?.title || "");
         setLoading(false);
       })
       .catch(e => {
@@ -44,6 +48,7 @@ export default function EditDraftPage() {
         body: JSON.stringify({
           post: { title, excerpt, content, keywords: keywords.split(",").map(k => k.trim()) },
           telegramPost,
+          titles: { website: title, dzen: dzenTitle, vc: vcTitle },
         }),
       });
       if (!res.ok) throw new Error("Save failed");
@@ -66,6 +71,7 @@ export default function EditDraftPage() {
           draftId,
           post: { title, excerpt, content, keywords: keywords.split(",").map(k => k.trim()) },
           telegramPost,
+          titles: { website: title, dzen: dzenTitle, vc: vcTitle },
         }),
       });
       const data = await res.json();
@@ -89,8 +95,19 @@ export default function EditDraftPage() {
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Заголовок</label>
+          <label className="block text-sm font-medium mb-1">Заголовок сайта (SEO)</label>
           <input value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded p-2 text-sm" />
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1 text-orange-600">Заголовок для Дзена</label>
+            <input value={dzenTitle} onChange={e => setDzenTitle(e.target.value)} className="w-full border rounded p-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1 text-blue-600">Заголовок для VC.ru</label>
+            <input value={vcTitle} onChange={e => setVcTitle(e.target.value)} className="w-full border rounded p-2 text-sm" />
+          </div>
         </div>
         
         <div>

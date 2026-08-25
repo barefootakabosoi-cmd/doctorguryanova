@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import nodemailer from "nodemailer"
 import { Redis } from "@upstash/redis"
+import { esc } from "@/lib/utils"
 
 export const dynamic = "force-dynamic";
 
@@ -12,27 +13,31 @@ const redis = new Redis({
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { direction, date, time, symptoms, name, phone, email, consent } = body
+    const { date, time, consent } = body
+    // Пользовательский ввод экранируем СРАЗУ — ниже он идёт в Telegram (HTML) и email (HTML)
+    const direction = esc(body.direction)
+    const symptoms = esc(body.symptoms)
+    const name = esc(body.name)
+    const phone = esc(body.phone)
+    const email = typeof body.email === "string" ? esc(body.email) : undefined
 
     if (!direction || !date || !time || !name || !phone || !consent) {
       return Response.json({ error: "Заполните обязательные поля и дайте согласие" }, { status: 400 })
     }
 
+    const bookingId = "NM-" + Date.now()
     const slotKey = `booking:${date}:${time}`
+
+    // Атомарное бронирование: SET NX создаёт ключ ТОЛЬКО если слот свободен.
+    // Два одновременных запроса не смогут занять одно время (гонка устранена).
     if (process.env.KV_REST_API_URL) {
-      const existing = await redis.get(slotKey)
-      if (existing) {
+      const acquired = await redis.set(slotKey, bookingId, { nx: true, ex: 86400 })
+      if (!acquired) {
         return Response.json(
           { error: "Это время уже занято. Выберите другое." },
           { status: 409 }
         )
       }
-    }
-
-    const bookingId = "NM-" + Date.now()
-
-    if (process.env.KV_REST_API_URL) {
-      await redis.set(slotKey, bookingId, { ex: 86400 })
     }
 
     try {

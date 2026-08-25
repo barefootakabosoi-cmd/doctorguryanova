@@ -116,7 +116,7 @@ async function handlePatientMessage(chatId: number, text: string) {
           role: "system",
           content: `Ты — медицинский ассистент врача-невролога Гурьяновой Валентины Андреевны. 
 Пациент описывает свои симптомы. Твоя задача:
-1. Кратко и экспертно объяснить, с чем这可能 быть связано (неврология, остеохондроз, ВСД и т.д.).
+1. Кратко и экспертно объяснить, с чем это может быть связано (неврология, остеохондроз, ВСД и т.д.).
 2. НЕ ставить точный диагноз и НЕ назначать лечение.
 3. Мягко порекомендовать онлайн-консультацию невролога.
 4. Дать прямую ссылку на запись: https://doctorguryanova.ru#booking
@@ -153,6 +153,17 @@ async function handlePatientMessage(chatId: number, text: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Защита от фейковых апдейтов: Telegram присылает этот заголовок
+    // в КАЖДОМ запросе, если setWebhook был вызван с secret_token.
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const received = req.headers.get("x-telegram-bot-api-secret-token");
+      if (received !== webhookSecret) {
+        console.warn("Telegram webhook: rejected request with invalid secret token");
+        return NextResponse.json({ ok: false }, { status: 401 });
+      }
+    }
+
     const update = await req.json();
     
     // Обработка текстовых сообщений (AI-Триаж)

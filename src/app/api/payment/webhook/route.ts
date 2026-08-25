@@ -1,10 +1,26 @@
 import { NextRequest } from "next/server"
+import { Redis } from "@upstash/redis"
+import { esc } from "@/lib/utils"
 
 export const dynamic = "force-dynamic";
 
-function generateJitsiLink(bookingId: string) {
-  const room = `guryanova-${bookingId}`
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL || "",
+  token: process.env.KV_REST_API_TOKEN || "",
+})
+
+function buildJitsiLink(room: string) {
   return `https://meet.jit.si/${room}#config.prejoinPageEnabled=false&config.startWithAudioMuted=true`
+}
+
+// Случайная непредсказуемая комната для приватности консультации
+async function getOrCreateJitsiLink(bookingId: string) {
+  const key = `jitsi:${bookingId}`
+  const saved = await redis.get<string>(key)
+  if (saved) return buildJitsiLink(saved)
+  const room = `guryanova-${crypto.randomUUID().slice(0, 8)}`
+  await redis.set(key, room, { ex: 86400 })
+  return buildJitsiLink(room)
 }
 
 export async function POST(request: NextRequest) {
@@ -30,15 +46,26 @@ export async function POST(request: NextRequest) {
     const { event, object } = body
 
     if (event === "payment.succeeded" && object?.status === "succeeded") {
-      const bookingId = object.metadata?.booking_id || "unknown"
-      const paymentId = object.id
+      // Пользовательские данные экранируем сразу — ниже идут в Telegram/email (HTML)
+      const bookingId = esc(object.metadata?.booking_id || "unknown")
+      const paymentId = esc(object.id)
       const amount = object.amount?.value
-      const patientEmail = object.metadata?.patient_email || "не указан"
-      const description = object.description || "Консультация"
+      const patientEmail = esc(object.metadata?.patient_email || "не указан")
+      const description = esc(object.description || "Консультация")
 
       console.log("Payment succeeded:", { bookingId, paymentId, amount })
 
-      const jitsiLink = generateJitsiLink(bookingId)
+      // Идемпотентность: ЮKassa может прислать payment.succeeded повторно.
+      // SET NX — обрабатываем только первый вебхук, дубли игнорируем.
+      if (process.env.KV_REST_API_URL) {
+        const first = await redis.set(`paid:${paymentId}`, "1", { nx: true, ex: 60 * 60 * 24 * 90 })
+        if (!first) {
+          console.log("Duplicate webhook for", paymentId, "- skipped")
+          return Response.json({ ok: true })
+        }
+      }
+
+      const jitsiLink = await getOrCreateJitsiLink(bookingId)
 
       // 1. Telegram
       const botToken = process.env.TELEGRAM_BOT_TOKEN

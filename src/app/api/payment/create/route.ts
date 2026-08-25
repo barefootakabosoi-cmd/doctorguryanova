@@ -1,16 +1,39 @@
 import { NextRequest } from "next/server"
 import nodemailer from "nodemailer"
+import { getService } from "@/lib/services"
+import { esc } from "@/lib/utils"
+import { Redis } from "@upstash/redis"
+
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL || "",
+  token: process.env.KV_REST_API_TOKEN || "",
+})
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { amount, description, returnUrl, bookingId, email } = body
+    const { serviceId, returnUrl, bookingId, email } = body
+
+    // Цена и название услуги берутся ТОЛЬКО из серверного каталога.
+    // Клиентская сумма не доверенная — игнорируем её полностью.
+    const service = getService(String(serviceId || ""))
+    if (!service) {
+      return Response.json(
+        { error: "Неизвестная услуга. Выберите услугу из списка." },
+        { status: 400 }
+      )
+    }
+    const amount = service.price
+    const description = service.name
 
     // ТЕСТОВЫЙ РЕЖИМ
     if (process.env.TEST_MODE === "true") {
-      const jitsiLink = `https://meet.jit.si/guryanova-${bookingId}#config.prejoinPageEnabled=false&config.startWithAudioMuted=true`
+      // Случайная непредсказуемая комната (приватность мед. консультации)
+      const room = `guryanova-${crypto.randomUUID().slice(0, 8)}`
+      await redis.set(`jitsi:${bookingId}`, room, { ex: 86400 })
+      const jitsiLink = `https://meet.jit.si/${room}#config.prejoinPageEnabled=false&config.startWithAudioMuted=true`
 
       // 1. Telegram врачу (синхронно, без setTimeout)
       try {
@@ -21,8 +44,8 @@ export async function POST(request: NextRequest) {
 
 💰 <b>Сумма:</b> ${amount} ₽
 👤 <b>Услуга:</b> ${description}
-📧 <b>Почта:</b> ${email || "не указан"}
-🆔 <b>ID:</b> <code>${bookingId}</code>
+📧 <b>Почта:</b> ${esc(email || "не указан")}
+🆔 <b>ID:</b> <code>${esc(bookingId)}</code>
 
 <b>🔽 ДЕЙСТВИЯ ВРАЧА:</b>
 1️⃣ Сохраните ссылку
@@ -93,10 +116,6 @@ export async function POST(request: NextRequest) {
         { error: "ЮKassa не настроена. Обратитесь к администратору сайта." },
         { status: 503 }
       )
-    }
-
-    if (!amount || amount <= 0) {
-      return Response.json({ error: "Некорректная сумма платежа" }, { status: 400 })
     }
 
     const idempotenceKey = `${Date.now()}-${Math.random()}`

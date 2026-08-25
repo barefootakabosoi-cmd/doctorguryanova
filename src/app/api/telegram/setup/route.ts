@@ -11,8 +11,13 @@ export async function GET() {
 
   const webhookUrl = "https://www.doctorguryanova.ru/api/telegram/webhook";
 
-  // Регистрируем webhook в Telegram
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook?url=${webhookUrl}`, {
+  // Регистрируем webhook в Telegram с секретным токеном:
+  // без него вебхук отвергает запросы (см. src/app/api/telegram/webhook/route.ts)
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const params = new URLSearchParams({ url: webhookUrl, allowed_updates: '["message","callback_query"]' });
+  if (webhookSecret) params.set("secret_token", webhookSecret);
+
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook?${params.toString()}`, {
     method: "POST",
   });
   const data = await res.json();

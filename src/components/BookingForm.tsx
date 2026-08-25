@@ -137,13 +137,12 @@ export default function BookingForm() {
       const bookingData = await bookingRes.json()
       const bookingId = bookingData.id || Date.now().toString()
 
-      const amount = prices[data.direction]
+      // Цена подставляется на сервере из каталога услуг (src/lib/services.ts)
       const paymentRes = await fetch("/api/payment/create/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount,
-          description: `Консультация: ${directionNames[data.direction]} — ${data.name}`,
+          serviceId: data.direction,
           returnUrl: `${window.location.origin}/payment/success/?paymentId=${bookingId}`,
           bookingId,
           email: data.email,

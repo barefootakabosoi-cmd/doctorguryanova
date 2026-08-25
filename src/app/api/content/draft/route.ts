@@ -28,6 +28,9 @@ export async function PUT(req: NextRequest) {
     if (body.post) {
       draft.post = { ...draft.post, ...body.post };
     }
+    if (body.titles) {
+      draft.titles = { ...(draft.titles || {}), ...body.titles };
+    }
     if (body.telegramPost !== undefined) {
       draft.telegramPost = body.telegramPost;
     }

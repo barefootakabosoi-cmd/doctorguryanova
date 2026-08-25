@@ -8,6 +8,7 @@ export interface GeneratedContent {
   post: BlogPost;
   telegramPost: string;
   seo: { title: string; description: string; keywords: string };
+  titles: { website: string; dzen: string; vc: string };
   sources: (PubMedArticle | CrossRefArticle)[];
 }
 
@@ -135,27 +136,35 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
 
   const metaResult = await chatCompletion({
     messages: [
-      { role: "system", content: "Ты — медицинский редактор. Профессиональные заголовки, НЕ рекламные, НЕ кликбейт." },
-      { role: "user", content: `Для статьи "${topic}" создай:
-TITLE (50-70 символов, профессиональный)
-DESCRIPTION (150-170 символов, информативный)
-KEYWORDS (5-7 через запятую)
+      { role: "system", content: "Ты — медицинский редактор и SMM-эксперт." },
+      { role: "user", content: `Для статьи на тему "${topic}" создай мета-данные:
+1. WEBSITE (50-70 символов, строгий, SEO-оптимизированный)
+2. DZEN (до 80 символов, интригующий, вызывает любопытство, но без откровенного кликбейта)
+3. VC (до 80 символов, экспертный, аналитический, для профессионалов)
+4. DESCRIPTION (150-170 символов, информативный)
+5. KEYWORDS (5-7 через запятую)
 
-Формат:
-TITLE: ...
+Формат строго:
+WEBSITE: ...
+DZEN: ...
+VC: ...
 DESCRIPTION: ...
 KEYWORDS: ...` },
     ],
-    temperature: 0.3,
-    max_tokens: 500,
+    temperature: 0.4,
+    max_tokens: 600,
   });
 
   const metaText = metaResult.choices[0]?.message?.content ?? "";
-  const titleMatch = metaText.match(/TITLE:\s*(.+)/i);
+  const websiteMatch = metaText.match(/WEBSITE:\s*(.+)/i);
+  const dzenMatch = metaText.match(/DZEN:\s*(.+)/i);
+  const vcMatch = metaText.match(/VC:\s*(.+)/i);
   const descMatch = metaText.match(/DESCRIPTION:\s*(.+)/i);
   const kwMatch = metaText.match(/KEYWORDS:\s*(.+)/i);
 
-  const title = titleMatch?.[1]?.trim() || topic;
+  const title = websiteMatch?.[1]?.trim() || topic;
+  const dzenTitle = dzenMatch?.[1]?.trim() || title;
+  const vcTitle = vcMatch?.[1]?.trim() || title;
   const excerpt = descMatch?.[1]?.trim() || `Профессиональный разбор: ${topic}`;
   const keywords = kwMatch?.[1]?.split(/[,;]/).map((k: string) => k.trim()).filter(Boolean).slice(0, 7) || [topic];
 
@@ -190,7 +199,7 @@ KEYWORDS: ...` },
     readTime: calculateReadTime(content),
   };
 
-  return { post, telegramPost, seo: { title, description: excerpt, keywords: keywords.join(", ") }, sources: allArticles };
+  return { post, telegramPost, seo: { title, description: excerpt, keywords: keywords.join(", ") }, titles: { website: title, dzen: dzenTitle, vc: vcTitle }, sources: allArticles };
 }
 
 function generateSourcesBlock(articles: (PubMedArticle | CrossRefArticle)[]): string {
