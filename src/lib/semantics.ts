@@ -28,6 +28,7 @@ export function normalizeQuery(q: string): string {
 const STOP_WORDS = new Set([
   "это","что","как","для","или","при","и","в","на","с","по","от","до","у","о",
   "можно","нужно","надо","если","чем","чему","когда","почему","есть","будет",
+  "сколько","какой","какая","какие","лучше","где",
 ]);
 
 /** Значимые слова запроса (без стоп-слов, короче 2 символов). */
@@ -52,8 +53,7 @@ const ENDINGS = [
   "ешься", "итесь", "ется", "ится", "атся", "ются", "утся",
   "аются", "яются", "ует", "уют", "ает", "яет",
   "ешь", "ишь", "ете", "ите", "ат", "ят", "ут", "ют", "ет", "ит",
-  // инфинитивы
-  "аться", "ись", "ить", "ать", "еть", "ять", "уть", "ыть", "ти", "чь",
+  "ить", "ать", "ять", "еть", "уть", "ыть",
   "ла", "ло", "ли", "ть", "ся",
   // причастия и прилагательные
   "енный", "анный", "инный", "аемый",
@@ -128,17 +128,23 @@ export function findOpportunities(
 ): SearchQuery[] {
   const { limit = 8, minVisits = 1 } = opts;
   const seen = new Set<string>();
+  const seenStems = new Set<string>(); // сигнатуры тем — против почти-дублей
   const result: SearchQuery[] = [];
 
   const sorted = [...queries].sort((a, b) => b.visits - a.visits);
 
   for (const q of sorted) {
     const norm = normalizeQuery(q.phrase);
-    if (!norm || norm.length < 8) continue;          // слишком короткие
+    if (!norm || norm.length < 5) continue;          // слишком короткие («мигрень», «невроз» — тоже темы)
     if (BRAND_RE.test(norm)) continue;               // брендовые/навигационные
     if (q.visits < minVisits) continue;
     if (seen.has(norm)) continue;
     seen.add(norm);
+
+    // почти-дубли («как лечить мигрень» ≈ «лечение мигрени»): одна тема — одно предложение
+    const sig = Array.from(new Set(significantWords(q.phrase).map(stem))).sort().join("+");
+    if (sig && seenStems.has(sig)) continue;
+    if (sig) seenStems.add(sig);
 
     if (!isQueryCovered(q.phrase, posts)) {
       result.push({ phrase: q.phrase.trim(), visits: q.visits });
