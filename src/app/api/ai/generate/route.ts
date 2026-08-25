@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { chatCompletion } from '@/lib/gigachat';
+import { parseBody, aiGenerateSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 export const runtime = 'nodejs';
@@ -38,15 +39,9 @@ const SYSTEM_PROMPTS: Record<string, string> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { topic, template = 'blog' } = body;
-
-    if (!topic || typeof topic !== 'string') {
-      return NextResponse.json(
-        { error: 'Поле topic обязательно' },
-        { status: 400 }
-      );
-    }
+    const parsed = await parseBody(req, aiGenerateSchema);
+    if (!parsed.ok) return parsed.response;
+    const { topic, template } = parsed.data;
 
     const systemPrompt = SYSTEM_PROMPTS[template] || SYSTEM_PROMPTS.blog;
 

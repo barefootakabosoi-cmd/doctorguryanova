@@ -3,6 +3,7 @@ import nodemailer from "nodemailer"
 import { getService } from "@/lib/services"
 import { esc } from "@/lib/utils"
 import { Redis } from "@upstash/redis"
+import { parseBody, paymentCreateSchema } from "@/lib/validation";
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL || "",
@@ -13,8 +14,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { serviceId, returnUrl, bookingId, email } = body
+    const parsed = await parseBody(request, paymentCreateSchema)
+    if (!parsed.ok) return parsed.response
+    const { serviceId, returnUrl, bookingId, email } = parsed.data
 
     // Цена и название услуги берутся ТОЛЬКО из серверного каталога.
     // Клиентская сумма не доверенная — игнорируем её полностью.

@@ -20,12 +20,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const post = await getPostBySlug(params.slug);
   if (!post) return { title: "Статья не найдена" };
 
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://doctorguryanova.ru";
   return {
     title: post.title,
     description: post.excerpt,
+    alternates: { canonical: `/blog/${post.slug}` },
     openGraph: {
       title: post.title,
       description: post.excerpt,
+      type: "article",
+      publishedTime: post.publishedAt,
+      modifiedTime: post.updatedAt,
     },
   };
 }
@@ -37,8 +42,25 @@ export default async function PostPage({ params }: PageProps) {
     notFound();
   }
 
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://doctorguryanova.ru";
   return (
     <>
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Article",
+          headline: post.title,
+          description: post.excerpt,
+          datePublished: post.publishedAt,
+          dateModified: post.updatedAt,
+          author: { "@type": "Person", name: "Гурьянова Виктория Александровна", jobTitle: "Врач-невролог" },
+          publisher: { "@type": "Organization", name: "Клиника доктора Гурьяновой" },
+          mainEntityOfPage: `${siteUrl}/blog/${post.slug}`,
+        }),
+      }}
+    />
     <Navbar />
     <main className="max-w-3xl mx-auto px-6 py-12">
       <Link href="/blog" className="text-sm text-charcoal/50 hover:text-gold transition-colors mb-6 inline-block">

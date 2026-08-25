@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import Link from "next/link";
+import ServiceFaq from "@/components/ServiceFaq";
 
 export const metadata: Metadata = {
   title: 'Онлайн-консультация невролога',
@@ -27,6 +28,8 @@ export default function Page() {
             Записаться на приём
           </Link>
         </div>
+
+        <ServiceFaq serviceName="Онлайн-консультации невролога" />
       </article>
     </main>
   );

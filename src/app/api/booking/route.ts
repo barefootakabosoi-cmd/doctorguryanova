@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import nodemailer from "nodemailer"
 import { Redis } from "@upstash/redis"
 import { esc } from "@/lib/utils"
+import { parseBody, bookingSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,9 @@ const redis = new Redis({
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const parsed = await parseBody(request, bookingSchema)
+    if (!parsed.ok) return parsed.response
+    const body = parsed.data
     const { date, time, consent } = body
     // Пользовательский ввод экранируем СРАЗУ — ниже он идёт в Telegram (HTML) и email (HTML)
     const direction = esc(body.direction)

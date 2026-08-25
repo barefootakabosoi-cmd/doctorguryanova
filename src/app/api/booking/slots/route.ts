@@ -20,11 +20,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ slots: [] })
   }
 
-  const booked: string[] = []
+  // Один pipeline вместо 10 последовательных запросов к Redis
+  const pipeline = redis.pipeline()
   for (const t of ALL_TIMES) {
-    const val = await redis.get(`booking:${date}:${t}`)
-    if (val) booked.push(t)
+    pipeline.get(`booking:${date}:${t}`)
   }
+  const results = await pipeline.exec()
+
+  const booked = ALL_TIMES.filter((_, i) => Boolean(results[i]))
 
   return NextResponse.json({ slots: booked })
 }

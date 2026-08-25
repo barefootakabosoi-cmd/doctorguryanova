@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import sanitizeHtml from "sanitize-html";
 import { slugify, calculateReadTime } from "@/lib/utils";
+import { parseBody, contentPublishSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,14 +16,12 @@ const redis = new Redis({
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const parsedBody = await parseBody(req, contentPublishSchema);
+    if (!parsedBody.ok) return parsedBody.response;
+    const body = parsedBody.data;
     console.log("[publish] called, draftId:", body.draftId);
     
-    const { draftId, post: rawPost, telegramPost } = body;
-
-    if (!rawPost?.title || !rawPost?.content) {
-      return NextResponse.json({ error: "Заполните title и content" }, { status: 400 });
-    }
+    const { draftId, post: rawPost, telegramPost } = body; // валидировано zod-схемой
 
     if (!process.env.KV_REST_API_URL) {
       return NextResponse.json({ error: "KV not configured" }, { status: 500 });

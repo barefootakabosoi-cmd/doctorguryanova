@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { generateArticle, generateArticleByKeyword } from "@/lib/content-pipeline";
 import { getRandomCluster, keywordClusters } from "@/lib/seo-keywords";
+import { parseBody, contentGenerateSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,10 +15,16 @@ const redis = new Redis({
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const parsed = await parseBody(req, contentGenerateSchema);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.data;
     const { topic, keyword, random } = body;
 
-    let generatedTopic = topic;
+    if (!random && !keyword && !topic) {
+      return NextResponse.json({ error: "Укажите topic, keyword или random=true" }, { status: 400 });
+    }
+
+    let generatedTopic: string;
     let cluster;
 
     if (random) {
@@ -26,8 +33,8 @@ export async function POST(req: NextRequest) {
     } else if (keyword) {
       cluster = keywordClusters.find(k => k.primary === keyword || k.secondary.includes(keyword) || k.longtail.includes(keyword));
       generatedTopic = keyword;
-    } else if (!topic) {
-      return NextResponse.json({ error: "Укажите topic, keyword или random=true" }, { status: 400 });
+    } else {
+      generatedTopic = topic as string;
     }
 
     console.log("[content/generate] Запуск генерации:", generatedTopic);
