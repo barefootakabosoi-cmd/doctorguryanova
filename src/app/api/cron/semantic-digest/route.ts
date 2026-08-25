@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
-import { getTopSearchQueries } from "@/lib/metrika";
+import { fetchSearchQueries } from "@/lib/metrika";
 import { getAllPosts } from "@/lib/blog-data";
 import { findOpportunities, queryId, type PostCover } from "@/lib/semantics";
 import { sendTelegramMessage } from "@/lib/notify";
@@ -24,14 +24,15 @@ const redis = new Redis({
  */
 export async function GET() {
   try {
-    const queries = await getTopSearchQueries(14, 50);
+    const { queries, problem } = await fetchSearchQueries(14, 50);
 
     if (queries.length === 0) {
+      const reason = problem ?? "unknown";
       await sendTelegramMessage(
-        "🤖 <b>Семантический дайджест</b>\n\nНет данных: проверь переменные YANDEX_METRIKA_TOKEN и YANDEX_METRIKA_COUNTER_ID в Vercel (и что счётчик установлен на сайт).",
+        `🤖 <b>Семантический дайджест</b>\n\nДанных нет. Причина:\n<code>${reason.replace(/</g, "&lt;")}</code>`,
         { disablePreview: true }
       );
-      return NextResponse.json({ ok: true, reason: "no-metrika-data" });
+      return NextResponse.json({ ok: true, reason });
     }
 
     const posts = await getAllPosts();

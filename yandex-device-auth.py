@@ -1,10 +1,15 @@
 import urllib.request, urllib.parse, json, os, time, sys
 
-# ID приложения из oauth.yandex.ru (кнопка "ID приложения" на странице приложения)
-# Запуск: YANDEX_CLIENT_ID=<id> python3 yandex-device-auth.py
+# ID приложения берётся из переменной YANDEX_CLIENT_ID,
+# а если её нет — скрипт спросит его интерактивно.
 CLIENT_ID = os.environ.get("YANDEX_CLIENT_ID", "")
 if not CLIENT_ID:
-    sys.exit("Ошибка: задай ID приложения. Пример:\n  YANDEX_CLIENT_ID=abc123... python3 yandex-device-auth.py\nСоздать приложение: https://oauth.yandex.ru -> \"Создать приложение\" -> платформа \"Веб-сервисы\", доступ Метрика -> Получение статистики")
+    print("Создай приложение на https://oauth.yandex.ru -> 'Создать приложение'")
+    print("(платформа 'Веб-сервисы', доступ: Метрика -> Получение статистики),")
+    print("затем скопируй 'ID приложения' со страницы приложения.")
+    CLIENT_ID = input("Вставь ID приложения и нажми Enter: ").strip()
+if not CLIENT_ID:
+    sys.exit("Пустой ID — выход.")
 SCOPE = "metrika:read"
 
 def request_device_code():

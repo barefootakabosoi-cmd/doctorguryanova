@@ -11,13 +11,22 @@ export interface SearchQuery {
  * Возвращает [] если переменные YANDEX_METRIKA_TOKEN / YANDEX_METRIKA_COUNTER_ID не заданы —
  * деплой безопасен до их добавления в Vercel.
  */
-export async function getTopSearchQueries(days = 14, limit = 50): Promise<SearchQuery[]> {
+export interface MetrikaResult {
+  queries: SearchQuery[];
+  /** Строка диагностики, если данные получить не удалось. */
+  problem?: string;
+}
+
+/**
+ * Детальная версия: различает «не настроено», «API ответил ошибкой» и «данных нет».
+ * Нужна, чтобы на проде сразу видеть точную причину пустого дайджеста.
+ */
+export async function fetchSearchQueries(days = 14, limit = 50): Promise<MetrikaResult> {
   const token = process.env.YANDEX_METRIKA_TOKEN;
   const counterId = process.env.YANDEX_METRIKA_COUNTER_ID;
 
   if (!token || !counterId) {
-    console.log("[metrika] Нет токена или counterId — дайджест пропускает Метрику");
-    return [];
+    return { queries: [], problem: "not-configured: задай YANDEX_METRIKA_TOKEN и YANDEX_METRIKA_COUNTER_ID в Vercel" };
   }
 
   const endDate = new Date().toISOString().split("T")[0];
@@ -40,8 +49,13 @@ export async function getTopSearchQueries(days = 14, limit = 50): Promise<Search
     });
 
     if (!res.ok) {
-      console.error("[metrika] Ошибка API:", res.status, (await res.text()).slice(0, 300));
-      return [];
+      const body = (await res.text()).slice(0, 300);
+      console.error("[metrika] Ошибка API:", res.status, body);
+      let hint = "";
+      if (res.status === 401) hint = " (токен невалиден/просрочен — выпусти новый)";
+      if (res.status === 403) hint = " (нет доступа к счётчику — токен от другого аккаунта?)";
+      if (res.status === 400) hint = " (проверь YANDEX_METRIKA_COUNTER_ID)";
+      return { queries: [], problem: `metrika-api ${res.status}${hint}: ${body.slice(0, 200)}` };
     }
 
     const data = await res.json();
@@ -53,9 +67,18 @@ export async function getTopSearchQueries(days = 14, limit = 50): Promise<Search
       .filter((q: SearchQuery) => q.phrase && !q.phrase.startsWith("ym:") && q.visits > 0);
 
     console.log("[metrika] Получено запросов:", queries.length);
-    return queries;
-  } catch (e) {
-    console.error("[metrika] Exception:", e);
-    return [];
+    if (queries.length === 0) {
+      return { queries, problem: "empty: API ответил успешно, но поисчных фраз пока нет (мало трафика или счётчик установлен недавно)" };
+    }
+    return { queries };
+  } catch (e: any) {
+    console.error("[metrika] Exception:", e?.message || e);
+    return { queries: [], problem: `network-error: ${String(e?.message || e).slice(0, 200)} (с Vercel API Метрики доступен; сетевые проблемы тут не ожидаются)` };
   }
+}
+
+/** Обратная совместимость: только список фраз, без диагностики. */
+export async function getTopSearchQueries(days = 14, limit = 50): Promise<SearchQuery[]> {
+  const r = await fetchSearchQueries(days, limit);
+  return r.queries;
 }
