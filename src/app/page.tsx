@@ -1,4 +1,8 @@
 import Link from "next/link";
+
+export const revalidate = 300;
+
+import { SITE_URL } from "@/lib/site"
 import { getAllPosts } from "@/lib/blog-data";
 import Navbar from "@/components/Navbar"
 import Hero from "@/components/Hero"
@@ -9,10 +13,26 @@ import Reviews from "@/components/Reviews"
 import SEOSections from "@/components/SEOSections"
 import Footer from "@/components/Footer"
 
+const physicianJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Physician",
+  name: "Гурьянова Валентина Андреевна",
+  description: "Невролог, рефлексотерапевт. 49 лет практики. Онлайн-консультации.",
+  url: SITE_URL,
+  telephone: "+7 (916) 100-40-53",
+  medicalSpecialty: ["Неврология", "Рефлексотерапия", "Иглорефлексотерапия", "Гирудотерапия", "Остеопатия"],
+  address: { "@type": "PostalAddress", addressCountry: "RU", addressLocality: "Москва" },
+  priceRange: "3200-5000 RUB",
+}
+
 export default async function Home() {
   const posts = await getAllPosts();
   return (
     <main className="min-h-screen bg-cream text-charcoal">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(physicianJsonLd) }}
+      />
       <Navbar />
       <Hero />
       <Methods />

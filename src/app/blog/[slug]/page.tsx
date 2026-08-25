@@ -4,6 +4,7 @@ import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getPostBySlug, getAllPosts } from "@/lib/blog-data";
+import { SITE_URL } from "@/lib/site"
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const post = await getPostBySlug(params.slug);
   if (!post) return { title: "Статья не найдена" };
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://doctorguryanova.ru";
+  const siteUrl = SITE_URL;
   return {
     title: post.title,
     description: post.excerpt,
@@ -42,7 +43,7 @@ export default async function PostPage({ params }: PageProps) {
     notFound();
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://doctorguryanova.ru";
+  const siteUrl = SITE_URL;
   return (
     <>
     <script

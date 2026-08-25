@@ -1,10 +1,23 @@
 import type { Metadata } from "next"
 import "./globals.css"
 import CookieBanner from "@/components/CookieBanner"
+import { SITE_URL } from "@/lib/site"
 
 export const metadata: Metadata = {
-  title: "Гурьянова Валентина Андреевна — Невролог, рефлексотерапевт",
-  description: "Онлайн-консультации невролога и рефлексотерапевта. 49 лет практики. Неврология, иглоукалывание, гирудотерапия, остеопатия.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Гурьянова Валентина Андреевна — Невролог, рефлексотерапевт",
+    template: "%s | Доктор Гурьянова",
+  },
+  description:
+    "Онлайн-консультации невролога и рефлексотерапевта. 49 лет практики. Неврология, иглоукалывание, гирудотерапия, остеопатия.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "ru_RU",
+    siteName: "Доктор Гурьянова",
+    images: [{ url: "/og-image.jpg", width: 1200, height: 630, alt: "Доктор Гурьянова — невролог, рефлексотерапевт" }],
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
