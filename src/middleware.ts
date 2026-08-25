@@ -18,6 +18,12 @@ function isAuthorized(req: NextRequest): boolean {
     return true;
   }
 
+  // 1a. Официальный механизм Vercel Cron: сам подписывает запросы Bearer CRON_SECRET
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    return true;
+  }
+
   // 2. Basic Auth для браузера
   if (!authHeader.startsWith('Basic ')) return false;
   const encoded = authHeader.slice(6);

@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import "./globals.css"
 import CookieBanner from "@/components/CookieBanner"
+import YandexMetrika from "@/components/YandexMetrika"
 import { SITE_URL } from "@/lib/site"
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased bg-cream text-charcoal">
         {children}
         <CookieBanner />
+        <YandexMetrika />
       </body>
     </html>
   )

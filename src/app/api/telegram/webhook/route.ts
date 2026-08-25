@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { chatCompletion } from "@/lib/gigachat";
+import { generateArticleByKeyword } from "@/lib/content-pipeline";
+import { sendTelegramMessage } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL || "",
@@ -237,6 +239,57 @@ export async function POST(req: NextRequest) {
       
       console.log(`[webhook] Черновик отклонён: ${draftId}`);
       
+    } else if (action === "kwgen" && draftId) {
+      // Кнопка из семантического дайджеста: сгенерировать статью под реальный запрос
+      if (!process.env.KV_REST_API_URL) {
+        await answerCallbackQuery(callbackId, "KV не настроен");
+        return NextResponse.json({ ok: true });
+      }
+
+      // Защита от двойного нажатия и ретраев Telegram (генерация долгая)
+      const lockKey = `kwgen:lock:${draftId}`;
+      const lock = await redis.set(lockKey, "1", { nx: true, ex: 300 });
+      if (!lock) {
+        await answerCallbackQuery(callbackId, "⏳ Черновик уже генерируется, подожди пару минут");
+        return NextResponse.json({ ok: true });
+      }
+
+      try {
+        const phraseRaw = await redis.get(`kw:${draftId}`);
+        const phrase = typeof phraseRaw === "string" ? phraseRaw.trim() : "";
+        if (!phrase) {
+          await answerCallbackQuery(callbackId, "Запрос не найден (истёк срок 7 дней)");
+          return NextResponse.json({ ok: true });
+        }
+
+        console.log(`[webhook] kwgen: генерация по запросу "${phrase}"`);
+        const generated = await generateArticleByKeyword(phrase);
+        const newDraftId = `draft-${Date.now()}`;
+        await redis.set(newDraftId, JSON.stringify(generated), { ex: 86400 * 7 });
+
+        await sendTelegramMessage(
+          `<b>📝 Черновик по запросу из дайджеста</b>\n\n<b>Запрос:</b> ${phrase.replace(/</g, "&lt;")}\n<b>Статья:</b> ${generated.post.title.replace(/</g, "&lt;")}\n<b>Время чтения:</b> ${generated.post.readTime} мин`,
+          {
+            disablePreview: true,
+            replyMarkup: {
+              inline_keyboard: [
+                [{ text: "✅ Опубликовать", callback_data: `publish|${newDraftId}` }],
+                [{ text: "📝 Открыть редактор", url: `https://doctorguryanova.ru/admin/content/${newDraftId}` }],
+                [{ text: "❌ Отклонить", callback_data: `reject|${newDraftId}` }],
+              ],
+            },
+          }
+        );
+
+        await answerCallbackQuery(callbackId, "✅ Черновик готов — смотри следующее сообщение");
+        if (chatId && messageId) {
+          await editMessage(chatId, messageId, `✅ По запросу «${phrase.replace(/</g, "&lt;")}» создан черновик статьи. Ревью — в сообщении ниже.`);
+        }
+      } catch (e: any) {
+        console.error("[webhook] kwgen error:", e);
+        await redis.del(lockKey); // можно попробовать ещё раз
+        await answerCallbackQuery(callbackId, "Ошибка генерации, попробуй ещё раз");
+      }
     } else {
       await answerCallbackQuery(callbackId, "Неизвестное действие");
     }
