@@ -3,6 +3,7 @@ import { Redis } from "@upstash/redis";
 import { generateArticle, generateArticleByKeyword } from "@/lib/content-pipeline";
 import { getRandomCluster, keywordClusters } from "@/lib/seo-keywords";
 import { parseBody, contentGenerateSchema } from "@/lib/validation";
+import { sendTelegramMessage } from "@/lib/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,30 +47,19 @@ export async function POST(req: NextRequest) {
       await redis.set(draftId, JSON.stringify(generated), { ex: 86400 * 7 });
     }
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
-
-    if (botToken && chatId) {
-      const preview = `<b>📝 Новая статья для ревью</b>\n\n<b>Тема:</b> ${generated.post.title}\n<b>Тип:</b> ${generated.post.type === "research" ? "Научный обзор" : "Статья"}\n<b>Время чтения:</b> ${generated.post.readTime} мин\n\n<i>Черновик сохранён. ID: ${draftId}</i>`;
-
-      const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: preview,
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "✅ Опубликовать", callback_data: `publish|${draftId}` }],
-              [{ text: "📝 Открыть редактор", url: `https://doctorguryanova.ru/admin/content/${draftId}` }],
-              [{ text: "❌ Отклонить", callback_data: `reject|${draftId}` }],
-            ],
-          },
-        }),
-      });
-    }
+    await sendTelegramMessage(
+      `<b>📝 Новая статья для ревью</b>\n\n<b>Тема:</b> ${generated.post.title}\n<b>Тип:</b> ${generated.post.type === "research" ? "Научный обзор" : "Статья"}\n<b>Время чтения:</b> ${generated.post.readTime} мин\n\n<i>Черновик сохранён. ID: ${draftId}</i>`,
+      {
+        disablePreview: true,
+        replyMarkup: {
+          inline_keyboard: [
+            [{ text: "✅ Опубликовать", callback_data: `publish|${draftId}` }],
+            [{ text: "📝 Открыть редактор", url: `https://doctorguryanova.ru/admin/content/${draftId}` }],
+            [{ text: "❌ Отклонить", callback_data: `reject|${draftId}` }],
+          ],
+        },
+      }
+    );
 
     return NextResponse.json({
       success: true,

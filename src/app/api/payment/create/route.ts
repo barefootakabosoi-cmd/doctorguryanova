@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import nodemailer from "nodemailer"
+import { sendTelegramMessage, sendEmail } from "@/lib/notify"
 import { getService } from "@/lib/services"
 import { esc } from "@/lib/utils"
 import { Redis } from "@upstash/redis"
@@ -39,10 +39,8 @@ export async function POST(request: NextRequest) {
 
       // 1. Telegram врачу (синхронно, без setTimeout)
       try {
-        const botToken = process.env.TELEGRAM_BOT_TOKEN
-        const chatId = process.env.TELEGRAM_CHAT_ID
-        if (botToken && chatId) {
-          const msg = `<b>🧪 ТЕСТОВАЯ ОПЛАТА (не реальные деньги)</b>
+        await sendTelegramMessage(
+`<b>🧪 ТЕСТОВАЯ ОПЛАТА (не реальные деньги)</b>
 
 💰 <b>Сумма:</b> ${amount} ₽
 👤 <b>Услуга:</b> ${description}
@@ -56,29 +54,16 @@ export async function POST(request: NextRequest) {
 
 🔗 <a href="${jitsiLink}"><b>ОТКРЫТЬ КОНСУЛЬТАЦИЮ</b></a>
 
-<i>⚠️ Это тест — деньги не списаны!</i>`
-          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "HTML", disable_web_page_preview: true }),
-          })
-        }
+<i>⚠️ Это тест — деньги не списаны!</i>`,
+          { disablePreview: true }
+        )
       } catch (e) { console.error("Test Telegram error:", e) }
 
       // 2. Email пациенту (синхронно)
-      try {
-        const smtpHost = process.env.SMTP_HOST
-        const smtpUser = process.env.SMTP_USER
-        const smtpPass = process.env.SMTP_PASS
-        if (smtpHost && smtpUser && smtpPass && email) {
-          const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: Number(process.env.SMTP_PORT) || 465,
-            secure: Number(process.env.SMTP_PORT) === 465,
-            auth: { user: smtpUser, pass: smtpPass },
-          })
-          await transporter.sendMail({
-            from: `"Гурьянова В.А." <${smtpUser}>`,
+      if (email) {
+        try {
+          const sent = await sendEmail({
+            fromName: "Гурьянова В.А.",
             to: email,
             subject: "Тестовая ссылка на консультацию",
             html: `
@@ -97,9 +82,9 @@ export async function POST(request: NextRequest) {
                 </p>
               </div>`,
           })
-          console.log("Test email sent to:", email)
-        }
-      } catch (e) { console.error("Test email error:", e) }
+          if (sent) console.log("Test email sent to:", email)
+        } catch (e) { console.error("Test email error:", e) }
+      }
 
       return Response.json({
         paymentUrl: `${returnUrl}&test=1`,

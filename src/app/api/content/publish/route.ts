@@ -3,6 +3,7 @@ import { Redis } from "@upstash/redis";
 import sanitizeHtml from "sanitize-html";
 import { slugify, calculateReadTime } from "@/lib/utils";
 import { parseBody, contentPublishSchema } from "@/lib/validation";
+import { sendTelegramMessage } from "@/lib/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,24 +72,13 @@ export async function POST(req: NextRequest) {
       console.log("[publish] draft deleted");
     }
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const channelId = process.env.TELEGRAM_CHANNEL_ID;
-    if (botToken && channelId && telegramPost) {
-      try {
-        const channelMsg = `${telegramPost}\n\nГурьянова В.А. — невролог с 49-летним стажем\nЧитать на сайте: https://doctorguryanova.ru/blog/${slug}`;
-        const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: channelId, text: channelMsg, disable_web_page_preview: true }),
-        });
-        if (!tgRes.ok) {
-          console.error("[publish] Telegram error:", await tgRes.text());
-        } else {
-          console.log("[publish] posted to channel");
-        }
-      } catch (e) {
-        console.error("[publish] Telegram error:", e);
-      }
+    if (channelId && telegramPost) {
+      const sent = await sendTelegramMessage(
+        `${telegramPost}\n\nГурьянова В.А. — невролог с 49-летним стажем\nЧитать на сайте: https://doctorguryanova.ru/blog/${slug}`,
+        { chatId: channelId, disablePreview: true }
+      );
+      if (sent) console.log("[publish] posted to channel");
     }
 
     return NextResponse.json({ success: true, slug, url: `/blog/${slug}` });

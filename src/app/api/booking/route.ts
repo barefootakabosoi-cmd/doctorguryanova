@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
-import nodemailer from "nodemailer"
 import { Redis } from "@upstash/redis"
+import { sendTelegramMessage, sendEmail } from "@/lib/notify"
 import { esc } from "@/lib/utils"
 import { parseBody, bookingSchema } from "@/lib/validation";
 
@@ -44,47 +44,27 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const botToken = process.env.TELEGRAM_BOT_TOKEN
-      const chatId = process.env.TELEGRAM_CHAT_ID
-      if (botToken && chatId) {
-        const msg = `🩺 Новая запись\n\n👤 ${name}\n📞 ${phone}\n📧 ${email || "не указан"}\n📋 ${direction}\n📅 ${date} в ${time}\n🆔 ${bookingId}\n📝 ${symptoms || "нет жалоб"}`
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "HTML" }),
-        })
-      }
+      await sendTelegramMessage(
+        `🩺 Новая запись\n\n👤 ${name}\n📞 ${phone}\n📧 ${email || "не указан"}\n📋 ${direction}\n📅 ${date} в ${time}\n🆔 ${bookingId}\n📝 ${symptoms || "нет жалоб"}`
+      )
     } catch (tgErr) {
       console.error("Telegram failed (non-fatal):", tgErr)
     }
 
     try {
-      const smtpHost = process.env.SMTP_HOST
-      const smtpUser = process.env.SMTP_USER
-      const smtpPass = process.env.SMTP_PASS
-      if (smtpHost && smtpUser && smtpPass) {
-        const transporter = nodemailer.createTransport({
-          host: smtpHost,
-          port: Number(process.env.SMTP_PORT) || 465,
-          secure: Number(process.env.SMTP_PORT) === 465,
-          auth: { user: smtpUser, pass: smtpPass },
-        })
-        await transporter.sendMail({
-          from: `"Запись Гурьянова" <${smtpUser}>`,
-          to: process.env.DOCTOR_EMAIL || smtpUser,
-          subject: `Новая запись: ${name} — ${direction}`,
-          html: `
-            <h2>Новая запись на консультацию</h2>
-            <p><b>Пациент:</b> ${name}</p>
-            <p><b>Телефон:</b> ${phone}</p>
-            <p><b>Email:</b> ${email || "не указан"}</p>
-            <p><b>Направление:</b> ${direction}</p>
-            <p><b>Дата и время:</b> ${date} в ${time}</p>
-            <p><b>Симптомы:</b> ${symptoms || "не указаны"}</p>
-            <p><b>ID брони:</b> ${bookingId}</p>
-          `,
-        })
-      }
+      await sendEmail({
+        subject: `Новая запись: ${name} — ${direction}`,
+        html: `
+          <h2>Новая запись на консультацию</h2>
+          <p><b>Пациент:</b> ${name}</p>
+          <p><b>Телефон:</b> ${phone}</p>
+          <p><b>Email:</b> ${email || "не указан"}</p>
+          <p><b>Направление:</b> ${direction}</p>
+          <p><b>Дата и время:</b> ${date} в ${time}</p>
+          <p><b>Симптомы:</b> ${symptoms || "не указаны"}</p>
+          <p><b>ID брони:</b> ${bookingId}</p>
+        `,
+      })
     } catch (smtpErr) {
       console.error("SMTP failed (non-fatal):", smtpErr)
     }

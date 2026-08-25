@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { Redis } from "@upstash/redis"
 import { esc } from "@/lib/utils"
+import { sendTelegramMessage, sendEmail } from "@/lib/notify"
 
 export const dynamic = "force-dynamic";
 
@@ -87,90 +88,56 @@ export async function POST(request: NextRequest) {
 
 <i>⚠️ Комната активна 24 часа. Не передавайте ссылку третьим лицам.</i>`
 
-        const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: "HTML", disable_web_page_preview: true }),
-        })
-        if (!tgRes.ok) {
-          console.error("Telegram send failed:", await tgRes.text())
-        }
+        await sendTelegramMessage(msg, { disablePreview: true })
       }
 
       // 2. Email пациенту
-      const smtpHost = process.env.SMTP_HOST
-      const smtpUser = process.env.SMTP_USER
-      const smtpPass = process.env.SMTP_PASS
-      if (smtpHost && smtpUser && smtpPass && patientEmail && patientEmail !== "не указан") {
-        try {
-          const nodemailer = await import("nodemailer")
-          const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: Number(process.env.SMTP_PORT) || 465,
-            secure: Number(process.env.SMTP_PORT) === 465,
-            auth: { user: smtpUser, pass: smtpPass },
-          })
-          await transporter.sendMail({
-            from: `"Гурьянова В.А." <${smtpUser}>`,
-            to: patientEmail,
-            subject: "Подтверждение оплаты и ссылка на консультацию",
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #0f766e;">Оплата подтверждена</h2>
-                <p>Услуга: ${description}</p>
-                <p>Сумма: <b>${amount} ₽</b></p>
-                <div style="margin: 24px 0;">
-                  <a href="${jitsiLink}" style="background: #0d9488; color: #fff; padding: 14px 28px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: bold;">
-                    Присоединиться к консультации
-                  </a>
-                </div>
-                <p style="color: #666; font-size: 14px;">
-                  Откройте ссылку в Chrome или Firefox за 5 минут до начала.<br>
-                  Разрешите доступ к камере и микрофону.
-                </p>
-                <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
-                <p style="color: #999; font-size: 12px;">
-                  ID платежа: ${paymentId}<br>
-                  По вопросам: <a href="https://t.me/Docguryanovabot">@Docguryanovabot</a>
-                </p>
-              </div>`,
-          })
-          console.log("Email sent to patient:", patientEmail)
-        } catch (emailErr) {
-          console.error("Email send failed:", emailErr)
-        }
+      if (patientEmail && patientEmail !== "не указан") {
+        const sent = await sendEmail({
+          fromName: "Гурьянова В.А.",
+          to: patientEmail,
+          subject: "Подтверждение оплаты и ссылка на консультацию",
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #0f766e;">Оплата подтверждена</h2>
+              <p>Услуга: ${description}</p>
+              <p>Сумма: <b>${amount} ₽</b></p>
+              <div style="margin: 24px 0;">
+                <a href="${jitsiLink}" style="background: #0d9488; color: #fff; padding: 14px 28px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: bold;">
+                  Присоединиться к консультации
+                </a>
+              </div>
+              <p style="color: #666; font-size: 14px;">
+                Откройте ссылку в Chrome или Firefox за 5 минут до начала.<br>
+                Разрешите доступ к камере и микрофону.
+              </p>
+              <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
+              <p style="color: #999; font-size: 12px;">
+                ID платежа: ${paymentId}<br>
+                По вопросам: <a href="https://t.me/Docguryanovabot">@Docguryanovabot</a>
+              </p>
+            </div>`,
+        })
+        if (sent) console.log("Email sent to patient:", patientEmail)
       }
 
       // 3. Email врачу
-      if (smtpHost && smtpUser && smtpPass) {
-        try {
-          const nodemailer = await import("nodemailer")
-          const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: Number(process.env.SMTP_PORT) || 465,
-            secure: Number(process.env.SMTP_PORT) === 465,
-            auth: { user: smtpUser, pass: smtpPass },
-          })
-          const doctorEmail = process.env.DOCTOR_EMAIL || smtpUser
-          await transporter.sendMail({
-            from: `"Запись Гурьянова" <${smtpUser}>`,
-            to: doctorEmail,
-            subject: `✅ Оплата ${amount} ₽ — ${description}`,
-            html: `
-              <p><b>Оплата получена</b></p>
-              <p>Услуга: ${description}</p>
-              <p>Сумма: ${amount} ₽</p>
-              <p>Пациент: ${patientEmail}</p>
-              <p>ID: ${bookingId}</p>
-              <p><a href="${jitsiLink}">Jitsi-ссылка</a></p>
-              <hr>
-              <p><b>Инструкция:</b> отправьте ссылку пациенту за 10 минут до приёма.</p>`,
-          })
-        } catch (err) {
-          console.error("Doctor email failed:", err)
-        }
-      }
-    }
+      {
+        const sent = await sendEmail({
+          subject: `✅ Оплата ${amount} ₽ — ${description}`,
+          html: `
+            <p><b>Оплата получена</b></p>
+            <p>Услуга: ${description}</p>
+            <p>Сумма: ${amount} ₽</p>
+            <p>Пациент: ${patientEmail}</p>
+            <p>ID: ${bookingId}</p>
+            <p><a href="${jitsiLink}">Jitsi-ссылка</a></p>
+            <hr>
+            <p><b>Инструкция:</b> отправьте ссылку пациенту за 10 минут до приёма.</p>`,
+        })
+        if (!sent) console.error("Doctor email failed")
+      } // конец блока «Email врачу»
+      } // конец if payment.succeeded
 
     return Response.json({ received: true })
   } catch (error) {
