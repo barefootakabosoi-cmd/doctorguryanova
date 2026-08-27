@@ -6,32 +6,43 @@ export default function Hero() {
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-charcoal/5 rounded-full blur-3xl"></div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 pt-20 pb-16 text-center">
-        <span className="inline-block text-xs uppercase tracking-[0.2em] text-gold font-semibold mb-6">
-          Врач высшей категории · 49 лет практики
-        </span>
+      <div className="max-w-6xl mx-auto px-6 pt-20 pb-16 grid md:grid-cols-2 gap-12 items-center">
+        <div className="text-center md:text-left">
+          <span className="inline-block text-xs uppercase tracking-[0.2em] text-gold font-semibold mb-6">
+            Врач высшей категории · 49 лет практики
+          </span>
 
-        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-serif text-charcoal mb-6 leading-tight">
-          Неврология и рефлексотерапия <br className="hidden md:block" /><span className="text-gold">без боли и таблеток</span>
-        </h1>
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-serif text-charcoal mb-6 leading-tight">
+            Онлайн-консультация <br className="hidden md:block" /><span className="text-gold">невролога</span> с 49-летним опытом
+          </h1>
 
-        <p className="text-base sm:text-lg md:text-xl text-charcoal/60 max-w-2xl mx-auto mb-10 leading-relaxed">
-          Онлайн-консультации опытного невролога. Индивидуальный подход к лечению мигреней, остеохондроза и сосудистых патологий.
-        </p>
+          <p className="text-base sm:text-lg md:text-xl text-charcoal/60 max-w-xl mx-auto md:mx-0 mb-10 leading-relaxed">
+            Разбор симптомов, расшифровка МРТ и КТ, второе мнение и индивидуальный план действий.
+          </p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a 
-            href="/#booking" 
-            className="bg-charcoal text-cream px-8 py-4 rounded-full text-base font-medium hover:bg-gold transition-all duration-300 shadow-lg w-full sm:w-auto"
-          >
-            Записаться на приём
-          </a>
-          <a 
-            href="/blog" 
-            className="border border-charcoal/20 text-charcoal px-8 py-4 rounded-full text-base font-medium hover:border-gold hover:text-gold transition-all duration-300 w-full sm:w-auto"
-          >
-            Читать блог
-          </a>
+          <div className="flex flex-col sm:flex-row items-center md:items-start justify-center md:justify-start gap-4">
+            <a 
+              href="/#booking" 
+              className="bg-charcoal text-cream px-8 py-4 rounded-full text-base font-medium hover:bg-gold transition-all duration-300 shadow-lg w-full sm:w-auto"
+            >
+              Записаться на приём
+            </a>
+            <a 
+              href="/blog" 
+              className="border border-charcoal/20 text-charcoal px-8 py-4 rounded-full text-base font-medium hover:border-gold hover:text-gold transition-all duration-300 w-full sm:w-auto"
+            >
+              Читать блог
+            </a>
+          </div>
+        </div>
+
+        <div className="relative hidden md:block">
+          <div className="absolute inset-0 bg-gold/20 rounded-full blur-3xl transform translate-x-4 translate-y-4"></div>
+          <img 
+            src="/images/doctor-hero.jpg" 
+            alt="Гурьянова Валентина Андреевна - невролог" 
+            className="relative rounded-2xl shadow-2xl object-cover h-[500px] w-full border-4 border-white"
+          />
         </div>
       </div>
     </section>
