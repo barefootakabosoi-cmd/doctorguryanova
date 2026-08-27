@@ -6,18 +6,24 @@ export default function Hero() {
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-charcoal/5 rounded-full blur-3xl"></div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-6 pt-20 pb-12">
-        <div className="grid md:grid-cols-2 gap-12 items-center">
+      {/* Уменьшили вертикальные отступы (pt-12 вместо pt-20) */}
+      <div className="max-w-6xl mx-auto px-6 pt-12 pb-8 md:pt-16 md:pb-10">
+        <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
           <div className="text-center md:text-left">
             <span className="block text-sm font-medium text-gold uppercase tracking-wider mb-4">
               Валентина Андреевна Гурьянова
             </span>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-serif text-charcoal mb-6 leading-tight">
+
+            {/* Уменьшили максимальный размер шрифта и отступ (mb-4) */}
+            <h1 className="text-4xl md:text-5xl font-serif text-charcoal mb-4 leading-tight">
               Онлайн-консультация <span className="text-gold">невролога</span>
             </h1>
-            <p className="text-lg text-charcoal/60 max-w-xl mx-auto md:mx-0 mb-10 leading-relaxed">
+
+            {/* Уменьшили отступ (mb-8) */}
+            <p className="text-lg text-charcoal/60 max-w-xl mx-auto md:mx-0 mb-8 leading-relaxed">
               Разбор симптомов, результатов обследований и медицинских заключений. Помощь в выборе дальнейшей тактики.
             </p>
+
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <a 
                 href="/#booking" 
@@ -39,27 +45,28 @@ export default function Hero() {
             <img 
               src="/images/doctor-hero.jpg" 
               alt="Гурьянова Валентина Андреевна - невролог" 
-              className="relative rounded-2xl shadow-2xl object-cover h-[450px] md:h-[550px] w-full max-w-md border-4 border-white"
+              /* Добавлен object-top (чтобы было видно лицо и плечи), уменьшена высота до h-[420px] md:h-[480px] и max-w-sm для портретной пропорции */
+              className="relative rounded-2xl shadow-2xl object-cover object-top h-[420px] md:h-[480px] w-full max-w-sm border-4 border-white"
             />
           </div>
         </div>
 
-        {/* Блок доказательств (под первым экраном) */}
-        <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 border-t border-charcoal/10 pt-10">
+        {/* Уменьшили отступы для блока доказательств (mt-10 и pt-6) */}
+        <div className="mt-10 md:mt-12 grid grid-cols-2 md:grid-cols-4 gap-6 border-t border-charcoal/10 pt-6">
           <div className="text-center">
-            <div className="text-3xl font-serif text-gold mb-1">49 лет</div>
+            <div className="text-2xl md:text-3xl font-serif text-gold mb-1">49 лет</div>
             <div className="text-sm text-charcoal/60">клинической практики</div>
           </div>
           <div className="text-center">
-            <div className="text-xl font-serif text-gold mb-1">Высшая категория</div>
+            <div className="text-lg md:text-xl font-serif text-gold mb-1">Высшая категория</div>
             <div className="text-sm text-charcoal/60">подтверждённый статус</div>
           </div>
           <div className="text-center">
-            <div className="text-xl font-serif text-gold mb-1">1-й МГМУ</div>
+            <div className="text-lg md:text-xl font-serif text-gold mb-1">1-й МГМУ</div>
             <div className="text-sm text-charcoal/60">им. И. М. Сеченова</div>
           </div>
           <div className="text-center">
-            <div className="text-xl font-serif text-gold mb-1">Онлайн</div>
+            <div className="text-lg md:text-xl font-serif text-gold mb-1">Онлайн</div>
             <div className="text-sm text-charcoal/60">из любой точки мира</div>
           </div>
         </div>
