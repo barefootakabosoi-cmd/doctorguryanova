@@ -10,6 +10,8 @@ import Methods from "@/components/Methods"
 import About from "@/components/About"
 import BookingForm from "@/components/BookingForm"
 import Reviews from "@/components/Reviews"
+import HowItWorks from "@/components/HowItWorks"
+import FinalCTA from "@/components/FinalCTA"
 import SEOSections from "@/components/SEOSections"
 import Footer from "@/components/Footer"
 
@@ -37,6 +39,7 @@ export default async function Home() {
       <Hero />
       <Methods />
       <About />
+      <HowItWorks />
       <BookingForm />
       <Reviews />
       <SEOSections />
@@ -62,6 +65,7 @@ export default async function Home() {
       </section>
     
     
+      <FinalCTA />
       <Footer /></main>
   )
 }
