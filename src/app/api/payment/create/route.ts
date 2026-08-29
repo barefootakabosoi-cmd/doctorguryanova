@@ -86,6 +86,11 @@ export async function POST(request: NextRequest) {
         } catch (e) { console.error("Test email error:", e) }
       }
 
+      if (process.env.KV_REST_API_URL) {
+        await redis.set(`paid:${bookingId}`, 'true');
+        await redis.set(`jitsi:${bookingId}`, jitsiLink);
+      }
+
       return Response.json({
         paymentUrl: `${returnUrl}&test=1`,
         paymentId: bookingId,

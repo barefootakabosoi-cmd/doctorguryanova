@@ -143,19 +143,13 @@ export default function BookingForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           serviceId: data.direction,
-          returnUrl: `${window.location.origin}/payment/success/?paymentId=${bookingId}`,
+          returnUrl: `${window.location.origin}/payment/success?bookingId=${bookingId}`,
           bookingId,
           email: data.email,
         }),
       })
 
       const paymentData = await paymentRes.json()
-
-      // Сохраняем Jitsi-ссылку для success-страницы (TEST_MODE)
-      if (paymentData.jitsiLink) {
-        localStorage.setItem(`jitsi_${bookingId}`, paymentData.jitsiLink)
-      }
-
       if (!paymentRes.ok || !paymentData.paymentUrl) {
         setServerError(paymentData.error || "Ошибка при создании платежа")
         setLoading(false)

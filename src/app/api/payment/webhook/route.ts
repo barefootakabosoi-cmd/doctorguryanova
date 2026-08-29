@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       // Идемпотентность: ЮKassa может прислать payment.succeeded повторно.
       // SET NX — обрабатываем только первый вебхук, дубли игнорируем.
       if (process.env.KV_REST_API_URL) {
-        const first = await redis.set(`paid:${paymentId}`, "1", { nx: true, ex: 60 * 60 * 24 * 90 })
+        const first = await redis.set(`paid:${bookingId}`, "1", { nx: true, ex: 60 * 60 * 24 * 90 })
         if (!first) {
           console.log("Duplicate webhook for", paymentId, "- skipped")
           return Response.json({ ok: true })
