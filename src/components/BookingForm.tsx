@@ -210,13 +210,17 @@ export default function BookingForm() {
                   <label className="block text-sm font-medium text-slate-700 mb-2">Время</label>
                   <select
                     {...register("time")}
-                    className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 bg-cream text-sm"
+                    disabled={Boolean(date) && availableSlots.length === 0}
+                    className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 bg-cream text-sm disabled:opacity-50"
                   >
-                    <option value="">Выберите время</option>
+                    <option value="">{date && availableSlots.length === 0 ? "Приём не ведётся" : "Выберите время"}</option>
                     {availableSlots.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
+                  {date && availableSlots.length === 0 && (
+                    <p className="text-amber-600 text-xs mt-2">В этот день приём не ведётся, выберите другую дату.</p>
+                  )}
                   {errors.time && <p className="text-red-500 text-xs mt-1">{errors.time.message}</p>}
                 </div>
               </div>

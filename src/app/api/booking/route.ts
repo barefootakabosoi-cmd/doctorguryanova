@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 import { Redis } from "@upstash/redis"
 import { sendTelegramMessage, sendEmail } from "@/lib/notify"
 import { esc } from "@/lib/utils"
+import { getWorkingHoursForDate } from "@/lib/schedule"
 import { parseBody, bookingSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,24 @@ export async function POST(request: NextRequest) {
 
     if (!direction || !date || !time || !name || !phone || !consent) {
       return Response.json({ error: "Заполните обязательные поля и дайте согласие" }, { status: 400 })
+    }
+
+    // Серверная валидация расписания
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return Response.json({ error: "Некорректный формат даты" }, { status: 400 })
+    }
+    
+    const [y, m, d] = date.split("-").map(Number);
+    const reqDate = new Date(Date.UTC(y, m - 1, d));
+    const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+    
+    if (reqDate < today) {
+      return Response.json({ error: "Нельзя записаться на прошедшую дату" }, { status: 400 })
+    }
+    
+    const allowedHours = getWorkingHoursForDate(date);
+    if (!allowedHours.includes(time)) {
+      return Response.json({ error: "Выбранное время недоступно для записи" }, { status: 400 })
     }
 
     const bookingId = "NM-" + Date.now()
