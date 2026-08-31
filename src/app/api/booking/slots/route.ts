@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Redis } from "@upstash/redis"
+import { WORKING_HOURS } from "@/lib/schedule"
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,7 @@ const redis = new Redis({
   token: process.env.KV_REST_API_TOKEN || "",
 })
 
-const ALL_TIMES = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+
 
 export async function GET(request: NextRequest) {
   const date = request.nextUrl.searchParams.get("date")
@@ -22,12 +23,12 @@ export async function GET(request: NextRequest) {
 
   // Один pipeline вместо 10 последовательных запросов к Redis
   const pipeline = redis.pipeline()
-  for (const t of ALL_TIMES) {
+  for (const t of WORKING_HOURS) {
     pipeline.get(`booking:${date}:${t}`)
   }
   const results = await pipeline.exec()
 
-  const booked = ALL_TIMES.filter((_, i) => Boolean(results[i]))
+  const available = WORKING_HOURS.filter((_, i) => !Boolean(results[i]))
 
-  return NextResponse.json({ slots: booked })
+  return NextResponse.json({ slots: available })
 }

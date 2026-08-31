@@ -5,8 +5,6 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 
-const times = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
-
 
 const bookingSchema = z.object({
   direction: z.string().min(1, "Выберите направление"),
@@ -49,7 +47,7 @@ export default function BookingForm() {
   const [price, setPrice] = useState("")
   const [loading, setLoading] = useState(false)
   const [serverError, setServerError] = useState("")
-  const [bookedSlots, setBookedSlots] = useState<string[]>([])
+  const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [today, setToday] = useState("")
 
 
@@ -89,8 +87,8 @@ export default function BookingForm() {
     const timeout = setTimeout(() => controller.abort(), 5000)
     fetch(`/api/booking/slots?date=${date}`, { signal: controller.signal })
       .then(r => r.json())
-      .then(data => setBookedSlots(data.slots || []))
-      .catch(() => setBookedSlots([]))
+      .then(data => setAvailableSlots(data.slots || []))
+      .catch(() => setAvailableSlots([]))
       .finally(() => clearTimeout(timeout))
     return () => {
       clearTimeout(timeout)
@@ -105,7 +103,6 @@ export default function BookingForm() {
     else setPrice("")
   }
 
-  const availableTimes = times.filter(t => !bookedSlots.includes(t))
   const canProceed = direction && date && time
 
   const onSubmit = async (data: BookingFormData) => {
@@ -216,7 +213,7 @@ export default function BookingForm() {
                     className="w-full px-4 py-3 rounded-xl border border-charcoal/10 focus:border-gold focus:ring-2 focus:ring-gold/20 outline-none transition-all duration-200 bg-cream text-sm"
                   >
                     <option value="">Выберите время</option>
-                    {availableTimes.map((t) => (
+                    {availableSlots.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
