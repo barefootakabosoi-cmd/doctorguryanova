@@ -1,26 +1,18 @@
-import { getPubMedArticles, type PubMedArticle } from "./pubmed";
-import { searchCrossRef, type CrossRefArticle } from "./crossref";
+import { getPubMedArticles } from "./pubmed";
+import { searchCrossRef } from "./crossref";
 import { chatCompletion } from "./gigachat";
-import { getClusterByKeyword, type KeywordCluster } from "./seo-keywords";
+import { getClusterByKeyword, getRandomCluster, type KeywordCluster } from "./seo-keywords";
 import type { BlogPost } from "./blog-data";
-import type { ResearchDossier, SourceArticle } from "./research-dossier";
+import type { ResearchDossier, EvidenceItem, GeneratedContent } from "./research-dossier";
 import sanitizeHtml from "sanitize-html";
 
-export interface GeneratedContent {
-  post: BlogPost;
-  telegramPost: string;
-  seo: { title: string; description: string; keywords: string };
-  dossier: ResearchDossier;
-  sources: SourceArticle[];
-}
-
-function dedupeArticles(articles: SourceArticle[]): SourceArticle[] {
-  const seen = new Set<string>();
-  return articles.filter(a => {
-    const key = a.title.toLowerCase().trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+function sanitizeContent(html: string): string {
+  return sanitizeHtml(html, {
+    allowedTags: ["h2", "h3", "p", "ul", "ol", "li", "strong", "em", "a", "blockquote"],
+    allowedAttributes: { a: ["href", "target", "rel"] },
+    transformTags: {
+      "a": sanitizeHtml.simpleTransform("a", { target: "_blank", rel: "noopener noreferrer" })
+    }
   });
 }
 
@@ -42,125 +34,176 @@ function slugify(text: string): string {
     .substring(0, 80);
 }
 
-function sanitizeContent(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: ["h2", "h3", "p", "ul", "ol", "li", "strong", "em", "a", "blockquote"],
-    allowedAttributes: { a: ["href", "target", "rel"] },
-    transformTags: {
-      "a": sanitizeHtml.simpleTransform("a", { target: "_blank", rel: "noopener noreferrer" })
+// SCIENCE GATE: Оценка релевантности и достаточности источников
+async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promise<{ isSufficient: boolean; dossier?: ResearchDossier }> {
+  if (articles.length === 0) return { isSufficient: false };
+
+  const prompt = `Ты — строгий медицинский рецензент. Оцени источники для темы: "${topic}".
+Источники:
+ ${articles.map((a, i) => `${i+1}. ${a.title} (${a.journal}, ${a.pubDate}). Abstract: ${a.abstract}`).join("\n\n")}
+
+Сформируй JSON:
+{
+  "isSufficient": boolean, // true только если есть хотя бы 1 релевантный RCT, мета-анализ или крупное когортное исследование
+  "dossier": {
+    "chosenAngle": "Уточненная тема на основе источников",
+    "keyFacts": ["Факт 1 из источника", "Факт 2"],
+    "whatIsKnown": ["Что известно"],
+    "whatIsNotKnown": ["Чего мы не знаем"],
+    "limitations": ["Ограничения исследований"],
+    "safeClaims": ["Безопасные выводы для пациентов"],
+    "confidence": "high | medium | low"
+  }
+}
+Если источники нерелевантны или это только клинические случаи (n=1) — isSufficient: false.`;
+
+  try {
+    const result = await chatCompletion({
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+      max_tokens: 1000,
+    });
+
+    let rawText = result.choices[0]?.message?.content ?? "{}";
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) rawText = jsonMatch[0];
+
+    const parsed = JSON.parse(rawText);
+    if (parsed.isSufficient && parsed.dossier) {
+      const dossier: ResearchDossier = {
+        topic,
+        ...parsed.dossier,
+        evidence: articles,
+      };
+      return { isSufficient: true, dossier };
     }
-  });
+  } catch (e) {
+    console.error("[ScienceGate] Parse error:", e);
+  }
+
+  return { isSufficient: false };
 }
 
-export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GeneratedContent> {
-  const pubmedQuery = cluster?.pubmedQuery || topic;
-  const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
-  const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
+// VOICE LAYER: Генерация статьи и TG-поста на основе Dossier
+async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string }> {
+  const prompt = `Ты — медицинский редактор. Напиши материал на основе строго утверждённого Dossier.
+Тема: ${dossier.chosenAngle}
+Факты: ${dossier.keyFacts.join("; ")}
+Известно: ${dossier.whatIsKnown.join("; ")}
+Ограничения: ${dossier.limitations.join("; ")}
+Безопасные выводы: ${dossier.safeClaims.join("; ")}
 
-  const allArticles = dedupeArticles([...rawPubmed, ...crossrefArticles]).slice(0, 7) as SourceArticle[];
-
-  const dossier: ResearchDossier = {
-    topic,
-    searchQuery: pubmedQuery,
-    articles: allArticles,
-    generatedAt: new Date().toISOString()
-  };
-
-  const dossierText = allArticles.length > 0
-    ? allArticles.map((a, i) => `Источник ${i + 1}: ${a.title} (${a.journal}, ${a.pubDate}). PMID: ${a.pmid || "нет"}. DOI: ${a.doi || "нет"}.\nAbstract: ${a.abstract}`).join("\n\n")
-    : "Научные статьи не найдены. Сформируй осторожный текст на основе общих медицинских знаний, явно указав, что конкретных исследований не найдено.";
-
-  // 1. SCIENCE LAYER: Извлечение фактов
-  const sciencePrompt = `Ты — медицинский аналитик. Изучи предоставленные научные источники по теме "${topic}". 
-Извлеки строго подтверждённые фактами данные. ЗАПРЕЩЕНО выдумывать цифры, размеры выборок, PMID, DOI или результаты.
-Если данных мало, честно напиши: "Недостаточно данных для уверенного утверждения".
-Источники:\n${dossierText}`;
-
-  const scienceResult = await chatCompletion({
-    messages: [
-      { role: "system", content: sciencePrompt },
-      { role: "user", content: `Сформируй JSON с полями: facts (массив строк), summary (краткое резюме), limitations (ограничения исследования).` },
-    ],
-    temperature: 0.2,
-    max_tokens: 1000,
-  });
-
-  const factualData = scienceResult.choices[0]?.message?.content ?? "{}";
-
-  // 2. VOICE LAYER: Гуманизация и создание версий
-  const voicePrompt = `Ты — медицинский редактор. На основе извлечённых фактов напиши материал для сайта и Telegram.
-Тон: спокойный, уверенный, тёплый, профессиональный. Без клише ("в современном мире", "важно отметить").
-ЗАПРЕЩЕНО менять медицинские факты, цифры или диагнозы из блока фактов.
-
-Фактический блок:\n${factualData}`;
-
-  const voiceResult = await chatCompletion({
-    messages: [
-      { role: "system", content: voicePrompt },
-      { role: "user", content: `Сгенерируй ответ в формате JSON:
+ЗАПРЕЩЕНО выдумывать новые факты, цифры или дозировки.
+Сгенерируй JSON:
 {
-  "siteTitle": "Заголовок для сайта (SEO, до 70 символов)",
-  "siteExcerpt": "Описание для сайта (до 170 символов)",
-  "siteContent": "HTML-статья для сайта. Структура: <h2>Введение</h2><p>...</p><h2>Что показало исследование</h2>...",
-  "telegramTitle": "Заголовок для Telegram-поста",
-  "telegramPost": "Текст поста для Telegram (короткий, с призывом перейти на сайт)"
-}` },
-    ],
+  "siteTitle": "Заголовок для сайта",
+  "siteExcerpt": "Описание",
+  "siteContent": "<h2>Введение</h2><p>...</p><h2>Что показало исследование</h2>...",
+  "telegramTitle": "Заголовок для TG",
+  "telegramPost": "Короткий пост для TG"
+}`;
+
+  const result = await chatCompletion({
+    messages: [{ role: "user", content: prompt }],
     temperature: 0.5,
     max_tokens: 3000,
   });
 
-  let parsed: any;
+  let rawText = result.choices[0]?.message?.content ?? "{}";
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) rawText = jsonMatch[0];
+
   try {
-    let rawText = voiceResult.choices[0]?.message?.content ?? "";
-    // Железобетонный парсинг: вырезаем любой мусор вокруг JSON
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      parsed = JSON.parse(jsonMatch[0]);
-    } else {
-      throw new Error("No JSON found");
-    }
+    return JSON.parse(rawText);
   } catch (e) {
-    console.error("[pipeline] JSON parse failed, fallback to raw text", e);
-    // Если JSON не спарсился, используем весь текст как статью, чтобы не потерять данные
-    const rawText = voiceResult.choices[0]?.message?.content ?? "";
-    parsed = { 
-      siteTitle: topic, 
-      siteExcerpt: "Профессиональный разбор темы", 
-      siteContent: rawText, 
-      telegramTitle: topic,
-      telegramPost: "Подробнее на сайте" 
+    return { siteTitle: dossier.chosenAngle, siteExcerpt: "Описание", siteContent: rawText, telegramTitle: dossier.chosenAngle, telegramPost: "Подробнее на сайте" };
+  }
+}
+
+// MAIN PIPELINE с Adaptive Topic Selection
+export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GeneratedContent> {
+  const maxAttempts = 3;
+  let currentTopic = topic;
+  let currentCluster = cluster;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    console.log(`[Pipeline] Attempt ${attempt + 1}: ${currentTopic}`);
+
+    const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
+    const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
+    const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
+    const allArticles = [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[];
+
+    if (allArticles.length === 0) {
+      console.log("[Pipeline] No articles found. Trying new topic.");
+      currentCluster = getRandomCluster();
+      currentTopic = currentCluster.primary;
+      continue;
+    }
+
+    // SCIENCE GATE
+    const { isSufficient, dossier } = await evaluateEvidence(currentTopic, allArticles);
+
+    if (!isSufficient || !dossier) {
+      console.log("[Pipeline] Insufficient evidence. Changing angle/topic.");
+      // Меняем угол: берем другой кластер
+      currentCluster = getRandomCluster();
+      currentTopic = currentCluster.primary;
+      continue;
+    }
+
+    // Если доказательств достаточно — генерируем версии
+    const versions = await generateVersions(dossier);
+
+    const siteContent = sanitizeContent(versions.siteContent || "");
+    const slug = slugify(versions.siteTitle || currentTopic);
+    const now = new Date().toISOString().split("T")[0];
+
+    const post: BlogPost = {
+      slug,
+      title: versions.siteTitle || currentTopic,
+      excerpt: versions.siteExcerpt || `Профессиональный разбор: ${currentTopic}`,
+      content: siteContent + generateSourcesBlock(allArticles),
+      keywords: currentCluster ? [currentCluster.primary] : [currentTopic],
+      type: "research",
+      publishedAt: now,
+      updatedAt: now,
+      readTime: calculateReadTime(siteContent),
+    };
+
+    return {
+      post,
+      telegramPost: sanitizeHtml(versions.telegramPost || "", { allowedTags: [], allowedAttributes: {} }),
+      seo: { title: post.title, description: post.excerpt, keywords: post.keywords.join(", ") },
+      dossier,
+      sources: allArticles
     };
   }
 
-  const siteContent = sanitizeContent(parsed.siteContent || "");
-  const telegramPost = sanitizeHtml(parsed.telegramPost || "", { allowedTags: [], allowedAttributes: {} }); // Telegram не любит HTML
-
-  const slug = slugify(parsed.siteTitle || topic);
-  const now = new Date().toISOString().split("T")[0];
-
-  const post: BlogPost = {
-    slug,
-    title: parsed.siteTitle || topic,
-    excerpt: parsed.siteExcerpt || `Профессиональный разбор: ${topic}`,
-    content: siteContent + generateSourcesBlock(allArticles),
-    keywords: cluster ? [cluster.primary] : [topic],
-    type: allArticles.length > 0 ? "research" : "seo",
-    publishedAt: now,
-    updatedAt: now,
-    readTime: calculateReadTime(siteContent),
+  // Если за 3 попытки не нашли тему — возвращаем пустой результат (cron не упадёт)
+  console.log("[Pipeline] Failed to find sufficient evidence after max attempts.");
+  const emptyPost: BlogPost = {
+    slug: "no-topic-found-" + Date.now(),
+    title: "Не удалось найти достаточно данных для статьи",
+    excerpt: "",
+    content: "<p>Система не нашла достаточно научных доказательств для генерации статьи.</p>",
+    keywords: [],
+    type: "seo",
+    publishedAt: new Date().toISOString().split("T")[0],
+    updatedAt: new Date().toISOString().split("T")[0],
+    readTime: 1,
   };
 
-  return { 
-    post, 
-    telegramPost, 
-    seo: { title: post.title, description: post.excerpt, keywords: post.keywords.join(", ") },
-    dossier,
-    sources: allArticles 
+  return {
+    post: emptyPost,
+    telegramPost: "Не удалось найти достаточно данных для статьи сегодня.",
+    seo: { title: "Нет данных", description: "", keywords: "" },
+    dossier: { topic: "", chosenAngle: "", evidence: [], keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], safeClaims: [], confidence: "low" },
+    sources: []
   };
 }
 
-function generateSourcesBlock(articles: SourceArticle[]): string {
+function generateSourcesBlock(articles: EvidenceItem[]): string {
   if (articles.length === 0) return "";
   const sources = articles.map(a => `<li><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a> — ${a.journal}, ${a.pubDate}</li>`).join("");
   return `\n<h2>Источники</h2>\n<ul>${sources}</ul>`;
