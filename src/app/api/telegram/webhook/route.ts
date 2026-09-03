@@ -263,7 +263,12 @@ export async function POST(req: NextRequest) {
         }
 
         console.log(`[webhook] kwgen: генерация по запросу "${phrase}"`);
-        const generated = await generateArticleByKeyword(phrase);
+        const genResult = await generateArticleByKeyword(phrase);
+        if (genResult.status === "no_suitable_topic") {
+          await answerCallbackQuery(callbackId, "Не удалось найти данные по этой теме");
+          return NextResponse.json({ ok: true });
+        }
+        const generated = genResult.content;
         const newDraftId = `draft-${Date.now()}`;
         await redis.set(newDraftId, JSON.stringify(generated), { ex: 86400 * 7 });
 

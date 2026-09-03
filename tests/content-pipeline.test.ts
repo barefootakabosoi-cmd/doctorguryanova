@@ -4,11 +4,16 @@ import { generateArticle } from "../src/lib/content-pipeline";
 // Мокаем GigaChat и парсеры
 vi.mock("../src/lib/gigachat", () => ({
   chatCompletion: vi.fn()
-    // 1. Оценка доказательств: недостаточно
-    .mockResolvedValueOnce({ choices: [{ message: { content: '{"isSufficient": false}' } }] })
-    // 2. Оценка доказательств: достаточно
+    // 1. Оценка доказательств (Биорегуляторы): вмешательство не совпадает -> PIVOT
+    .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
+      isSufficient: false,
+      interventionMatches: false,
+      reason: "Sources are about manual therapy, not bioregulators"
+    }) } }] })
+    // 2. Оценка доказательств (Новая тема): PASS
     .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
       isSufficient: true,
+      interventionMatches: true,
       dossier: { chosenAngle: "Test Angle", keyFacts: ["Fact 1"], whatIsKnown: ["Known"], whatIsNotKnown: ["Unknown"], limitations: ["L1"], safeClaims: ["Claim 1"], confidence: "high" }
     }) } }] })
     // 3. Генерация версий
@@ -21,10 +26,13 @@ vi.mock("../src/lib/pubmed", () => ({ getPubMedArticles: vi.fn().mockResolvedVal
 vi.mock("../src/lib/crossref", () => ({ searchCrossRef: vi.fn().mockResolvedValue([]) }));
 vi.mock("../src/lib/seo-keywords", () => ({ getRandomCluster: vi.fn().mockReturnValue({ primary: "New Topic", pubmedQuery: "New Query" }), getClusterByKeyword: vi.fn() }));
 
-describe("Research Content Engine v1.1", () => {
-  it("should pivot topic if evidence is insufficient (Case 1 & 4)", async () => {
+describe("Research Content Engine v1.2 (Strict Gate)", () => {
+  it("should pivot if intervention does not match (Bioregulators case)", async () => {
     const result = await generateArticle("Bioregulators");
-    // Первый вызов вернет isSufficient: false, система должна сменить тему и попробовать снова
-    expect(result.post.title).toBe("Test Title"); // Должна вернуть успешную статью со второй попытки
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      // Должна вернуть успешную статью со второй попытки (New Topic)
+      expect(result.content.post.title).toBe("Test Title");
+    }
   });
 });

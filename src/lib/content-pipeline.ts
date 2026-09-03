@@ -34,9 +34,13 @@ function slugify(text: string): string {
     .substring(0, 80);
 }
 
+export type GenerationResult = 
+  | { status: "success"; content: GeneratedContent }
+  | { status: "no_suitable_topic" };
+
 // SCIENCE GATE: Оценка релевантности и достаточности источников
-async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promise<{ isSufficient: boolean; dossier?: ResearchDossier }> {
-  if (articles.length === 0) return { isSufficient: false };
+async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promise<{ isSufficient: boolean; dossier?: ResearchDossier; reason?: string }> {
+  if (articles.length === 0) return { isSufficient: false, reason: "no sources found" };
 
   const prompt = `Ты — строгий медицинский рецензент. Оцени источники для темы: "${topic}".
 Источники:
@@ -44,18 +48,23 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
 
 Сформируй JSON:
 {
-  "isSufficient": boolean, // true только если есть хотя бы 1 релевантный RCT, мета-анализ или крупное когортное исследование
+  "interventionMatches": boolean, // true, ТОЛЬКО если вмешательство в источнике совпадает с темой. (Например: тема "биорегуляторы", а источники про "мануальную терапию" -> false)
+  "relevantSources": number,
+  "highQuality": number, // RCT, meta-analysis, systematic review, guideline
+  "mediumQuality": number, // Когортные, обсервационные, обзоры (reviews)
+  "clinicalCases": number,
+  "isSufficient": boolean, // true, если (highQuality >= 1) ИЛИ (mediumQuality >= 2 И clinicalCases == 0). Если есть только clinical case n=1 -> false.
+  "reason": "Краткое объяснение решения (почему Pass или Pivot)",
   "dossier": {
     "chosenAngle": "Уточненная тема на основе источников",
-    "keyFacts": ["Факт 1 из источника", "Факт 2"],
+    "keyFacts": ["Только факты из источников"],
     "whatIsKnown": ["Что известно"],
     "whatIsNotKnown": ["Чего мы не знаем"],
-    "limitations": ["Ограничения исследований"],
-    "safeClaims": ["Безопасные выводы для пациентов"],
-    "confidence": "high | medium | low"
+    "limitations": ["Ограничения"],
+    "safeClaims": ["Безопасные выводы"],
+    "confidence": "high (если RCT/Мета-анализ) | medium (если обзоры/когорты) | low (если обсервационные)"
   }
-}
-Если источники нерелевантны или это только клинические случаи (n=1) — isSufficient: false.`;
+}`;
 
   try {
     const result = await chatCompletion({
@@ -69,19 +78,34 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
     if (jsonMatch) rawText = jsonMatch[0];
 
     const parsed = JSON.parse(rawText);
-    if (parsed.isSufficient && parsed.dossier) {
+
+    // Структурированный лог для Vercel
+    console.log(`[ScienceGate] 
+      topic: ${topic}
+      sources: ${articles.length}
+      relevant: ${parsed.relevantSources || 0}
+      highQuality: ${parsed.highQuality || 0}
+      mediumQuality: ${parsed.mediumQuality || 0}
+      clinicalCases: ${parsed.clinicalCases || 0}
+      interventionMatches: ${parsed.interventionMatches}
+      decision: ${parsed.isSufficient ? 'PASS' : 'PIVOT'}
+      reason: ${parsed.reason || 'unknown'}
+    `);
+
+    if (parsed.isSufficient && parsed.dossier && parsed.interventionMatches) {
       const dossier: ResearchDossier = {
         topic,
         ...parsed.dossier,
         evidence: articles,
       };
       return { isSufficient: true, dossier };
+    } else {
+      return { isSufficient: false, reason: parsed.reason || "insufficient evidence or intervention mismatch" };
     }
   } catch (e) {
-    console.error("[ScienceGate] Parse error:", e);
+    console.error("[ScienceGate] Error:", e);
+    return { isSufficient: false, reason: "evaluation error" };
   }
-
-  return { isSufficient: false };
 }
 
 // VOICE LAYER: Генерация статьи и TG-поста на основе Dossier
@@ -121,7 +145,7 @@ async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: 
 }
 
 // MAIN PIPELINE с Adaptive Topic Selection
-export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GeneratedContent> {
+export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GenerationResult> {
   const maxAttempts = 3;
   let currentTopic = topic;
   let currentCluster = cluster;
@@ -142,11 +166,10 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     }
 
     // SCIENCE GATE
-    const { isSufficient, dossier } = await evaluateEvidence(currentTopic, allArticles);
+    const { isSufficient, dossier, reason } = await evaluateEvidence(currentTopic, allArticles);
 
     if (!isSufficient || !dossier) {
-      console.log("[Pipeline] Insufficient evidence. Changing angle/topic.");
-      // Меняем угол: берем другой кластер
+      console.log(`[Pipeline] PIVOT. Reason: ${reason}. Changing angle/topic.`);
       currentCluster = getRandomCluster();
       currentTopic = currentCluster.primary;
       continue;
@@ -172,35 +195,20 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     };
 
     return {
-      post,
-      telegramPost: sanitizeHtml(versions.telegramPost || "", { allowedTags: [], allowedAttributes: {} }),
-      seo: { title: post.title, description: post.excerpt, keywords: post.keywords.join(", ") },
-      dossier,
-      sources: allArticles
+      status: "success",
+      content: {
+        post,
+        telegramPost: sanitizeHtml(versions.telegramPost || "", { allowedTags: [], allowedAttributes: {} }),
+        seo: { title: post.title, description: post.excerpt, keywords: post.keywords.join(", ") },
+        dossier,
+        sources: allArticles
+      }
     };
   }
 
-  // Если за 3 попытки не нашли тему — возвращаем пустой результат (cron не упадёт)
-  console.log("[Pipeline] Failed to find sufficient evidence after max attempts.");
-  const emptyPost: BlogPost = {
-    slug: "no-topic-found-" + Date.now(),
-    title: "Не удалось найти достаточно данных для статьи",
-    excerpt: "",
-    content: "<p>Система не нашла достаточно научных доказательств для генерации статьи.</p>",
-    keywords: [],
-    type: "seo",
-    publishedAt: new Date().toISOString().split("T")[0],
-    updatedAt: new Date().toISOString().split("T")[0],
-    readTime: 1,
-  };
-
-  return {
-    post: emptyPost,
-    telegramPost: "Не удалось найти достаточно данных для статьи сегодня.",
-    seo: { title: "Нет данных", description: "", keywords: "" },
-    dossier: { topic: "", chosenAngle: "", evidence: [], keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], safeClaims: [], confidence: "low" },
-    sources: []
-  };
+  // Если за 3 попытки не нашли тему — возвращаем технический статус без создания BlogPost
+  console.log("[Pipeline] Failed to find sufficient evidence after max attempts. No draft created.");
+  return { status: "no_suitable_topic" };
 }
 
 function generateSourcesBlock(articles: EvidenceItem[]): string {
@@ -209,7 +217,7 @@ function generateSourcesBlock(articles: EvidenceItem[]): string {
   return `\n<h2>Источники</h2>\n<ul>${sources}</ul>`;
 }
 
-export async function generateArticleByKeyword(keyword: string): Promise<GeneratedContent> {
+export async function generateArticleByKeyword(keyword: string): Promise<GenerationResult> {
   const cluster = getClusterByKeyword(keyword);
   return generateArticle(keyword, cluster);
 }

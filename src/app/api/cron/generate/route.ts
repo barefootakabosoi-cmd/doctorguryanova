@@ -22,7 +22,11 @@ export async function GET(req: Request) {
   try {
     console.log("[cron] Запуск...");
     const cluster = getRandomCluster();
-    const generated = await generateArticle(cluster.primary, cluster);
+    const result = await generateArticle(cluster.primary, cluster);
+    if (result.status === "no_suitable_topic") {
+      return NextResponse.json({ success: true, status: "no_suitable_topic" });
+    }
+    const generated = result.content;
 
     const draftId = `draft-${Date.now()}`;
     if (process.env.KV_REST_API_URL) {

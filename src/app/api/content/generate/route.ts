@@ -40,7 +40,11 @@ export async function POST(req: NextRequest) {
 
     console.log("[content/generate] Запуск генерации:", generatedTopic);
 
-    const generated = await generateArticle(generatedTopic, cluster);
+    const result = await generateArticle(generatedTopic, cluster);
+    if (result.status === "no_suitable_topic") {
+      return NextResponse.json({ success: false, error: "no_suitable_topic" }, { status: 200 });
+    }
+    const generated = result.content;
 
     const draftId = `draft-${Date.now()}`;
     if (process.env.KV_REST_API_URL) {
