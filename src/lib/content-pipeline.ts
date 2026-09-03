@@ -53,7 +53,7 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
   "highQuality": number, // RCT, meta-analysis, systematic review, guideline
   "mediumQuality": number, // Когортные, обсервационные, обзоры (reviews)
   "clinicalCases": number,
-  "isSufficient": boolean, // true, если (highQuality >= 1) ИЛИ (mediumQuality >= 2 И clinicalCases == 0). Если есть только clinical case n=1 -> false.
+  "isSufficient": boolean, // СТРОГО: true, если (highQuality >= 1) ИЛИ (mediumQuality >= 2 И clinicalCases == 0). В остальных случаях false.
   "reason": "Краткое объяснение решения (почему Pass или Pivot)",
   "dossier": {
     "chosenAngle": "Уточненная тема на основе источников",
