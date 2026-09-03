@@ -202,6 +202,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   const maxAttempts = 3;
   let currentTopic = topic;
   let currentCluster = cluster;
+  const attemptedTopics = new Set<string>(); // Запоминаем темы, которые уже пробовали
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     console.log(`[Pipeline] Attempt ${attempt + 1}: ${currentTopic}`);
@@ -212,8 +213,15 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     const allArticles = [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[];
 
     if (allArticles.length === 0) {
-      currentCluster = getRandomCluster();
+      let nextCluster = getRandomCluster();
+      let safetyCounter = 0;
+      while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
+        nextCluster = getRandomCluster();
+        safetyCounter++;
+      }
+      currentCluster = nextCluster;
       currentTopic = currentCluster.primary;
+      attemptedTopics.add(currentTopic);
       continue;
     }
 
@@ -221,8 +229,15 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     
     if (!isSufficient || !dossier) {
       console.log(`[Pipeline] PIVOT. Reason: ${reason}.`);
-      currentCluster = getRandomCluster();
+      let nextCluster = getRandomCluster();
+      let safetyCounter = 0;
+      while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
+        nextCluster = getRandomCluster();
+        safetyCounter++;
+      }
+      currentCluster = nextCluster;
       currentTopic = currentCluster.primary;
+      attemptedTopics.add(currentTopic);
       continue;
     }
 
