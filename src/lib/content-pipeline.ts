@@ -130,27 +130,47 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
   }
 }
 
-// VOICE LAYER (Использует маркеры вместо JSON)
-async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string }> {
-  const prompt = `Ты — медицинский редактор. Напиши материал на основе строго утверждённого Dossier.
+// STEP 2: SCIENTIFIC DRAFT (Сухой черновик)
+async function generateScientificDraft(dossier: ResearchDossier): Promise<string> {
+  const prompt = `Ты — медицинский аналитик. На основе утверждённого Dossier напиши сухой научный черновик статьи на русском языке.
 Тема: ${dossier.chosenAngle}
-Факты: ${dossier.keyFacts.join("; ")}
-Известно: ${dossier.whatIsKnown.join("; ")}
+Факты (используй строго): ${dossier.keyFacts.join("; ")}
+Что известно: ${dossier.whatIsKnown.join("; ")}
 Ограничения: ${dossier.limitations.join("; ")}
-Безопасные выводы: ${dossier.safeClaims.join("; ")}
 
-ЗАПРЕЩЕНО выдумывать новые факты, цифры или дозировки.
-Пиши ТОЛЬКО на чистом HTML (без Markdown).
-ЗАПРЕЩЕНО добавлять блоки "Литература", "Источники", "Ключевые слова", "Авторы", "Дата публикации". Система добавит источники автоматически.
+ЗАПРЕЩЕНО добавлять воду, введение и заключение. Только пересказ фактов с указанием авторов и годов (если есть в фактах). Формат: обычный текст.`;
 
-Ответь СТРОГО в следующем формате (без JSON, используй маркеры):
+  const result = await chatCompletion({
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.2, // Максимальная точность
+    max_tokens: 1500,
+  });
+  return result.choices[0]?.message?.content ?? "";
+}
+
+// STEP 3: HUMANIZER (Живой язык + разные версии)
+async function humanizeDraft(draft: string, dossier: ResearchDossier): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string }> {
+  const prompt = `Ты — медицинский редактор. Твоя задача — переписать сухой научный черновик в живую, экспертную статью для сайта и Telegram.
+
+НАУЧНЫЙ ЧЕРНОВИК:
+ ${draft}
+
+ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
+1. Сохрани ВСЕ medical facts, цифры, дозировки, авторов и годы из черновика. ЗАПРЕЩЕНО их менять или убирать.
+2. ЗАПРЕЩЕНЫ клише ("Многие пациенты", "Узнайте больше", "В современном мире", "Снова в моде").
+3. ЗАПРЕЩЕН страдательный залог ("было доказано"). Используй активный залог ("Исследователи доказали").
+4. Тон: спокойный, экспертный, как у топовых медицинских каналов.
+5. Пиши ТОЛЬКО на чистом HTML (без Markdown).
+6. ЗАПРЕЩЕНО добавлять блоки "Литература", "Источники", "Ключевые слова". Система добавит их автоматически.
+
+Ответь СТРОГО в следующем формате (маркеры):
 
 [TITLE]
-Заголовок для сайта (до 70 символов)
+Профессиональный заголовок для сайта (до 70 символов)
 [/TITLE]
 
 [EXCERPT]
-Описание для сайта (до 170 символов)
+Содержательный текст описания для сайта (до 170 символов)
 [/EXCERPT]
 
 [CONTENT]
@@ -158,50 +178,39 @@ HTML-статья для сайта. Структура: <h2>Введение</h
 [/CONTENT]
 
 [TG_TITLE]
-Строгий заголовок для Telegram-поста (без эмодзи, без кликбейта)
+Строгий заголовок для Telegram-поста
 [/TG_TITLE]
 
 [TG_POST]
 Короткий пост для Telegram. СТРОГИЕ ПРАВИЛА:
-1. ПОЛНОСТЬЮ ЗАПРЕЩЕНЫ любые эмодзи.
-2. ЗАПРЕЩЕНЫ хэштеги (#).
-3. ЗАПРЕЩЕНЫ рекламные клише ("Узнайте больше", "Откройте для себя", "Снова в моде").
-4. Тон: спокойный, экспертный, как у топовых медицинских каналов.
-5. Формат (строго):
-   - 1-2 предложения: суть проблемы (например, что часто беспокоит пациентов).
-   - 2-3 предложения: что показало исследование (только факты из Dossier).
-   - 1 предложение: ограничение или важное предупреждение (например, "метод не заменяет основное лечение").
-   - 1 предложение: мягкий призыв. СТРОГО используй эту фразу: "Подробнее о механизмах действия — в полной статье на сайте:"
-Текст должен быть разделен на абзацы пустой строкой.
+1. ЗАПРЕЩЕНЫ эмодзи и хэштеги.
+2. ОБЯЗАТЕЛЬНО укажи автора и год (например, "Bapat et al. (1998) доказали...").
+3. Формат: 1 предложение (суть) + 2 предложения (что выяснили авторы) + 1 предложение (ограничение) + призыв: "Подробнее о механизмах действия — в полной статье на сайте:"
 [/TG_POST]`;
 
   const result = await chatCompletion({
     messages: [{ role: "user", content: prompt }],
-    temperature: 0.5,
-    max_tokens: 3000,
+    temperature: 0.5, // Баланс между точностью и живостью
+    max_tokens: 2500,
   });
 
   const rawText = result.choices[0]?.message?.content ?? "";
-  console.log("[VoiceLayer] GigaChat raw response:", rawText);
+  console.log("[Humanizer] GigaChat raw response:", rawText);
 
-  // Пуленепробиваемый экстрактор: если нет закрывающего тега, берет до следующего маркера
-  const extractBlock = (startTag: string): string => {
-    const regex = new RegExp(`\\[${startTag}\\]([\\s\\S]*?)\\[/${startTag}\\]`, "i");
-    let match = rawText.match(regex);
-    if (match) return match[1].trim();
-    
-    // Fallback: если закрывающий тег забыт, берем до следующего маркера [...
-    const fallbackRegex = new RegExp(`\\[${startTag}\\]([\\s\\S]*?)(?:\\[\\/?[A-Z_]+\\]|$)`, "i");
-    match = rawText.match(fallbackRegex);
+  const extract = (tag: string): string => {
+    const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[/${tag}\\]`, "i");
+    const match = rawText.match(regex);
     return match ? match[1].trim() : "";
   };
 
-  // Очищаем от возможных остатков маркеров
-  let siteTitle = extractBlock("TITLE").replace(/\\[\\/?TITLE\\]/g, '').trim() || dossier.chosenAngle;
-  let siteExcerpt = extractBlock("EXCERPT").replace(/\\[\\/?EXCERPT\\]/g, '').trim() || "Профессиональный разбор темы";
-  let siteContent = extractBlock("CONTENT").replace(/\\[\\/?CONTENT\\]/g, '').trim() || `<p>${rawText}</p>`;
-  let telegramTitle = sanitizeBadEncoding(extractBlock("TG_TITLE").replace(/\\[\\/?TG_TITLE\\]/g, '').trim()) || siteTitle;
-  let telegramPost = sanitizeBadEncoding(extractBlock("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim()) || "Подробнее на сайте";
+  // Умный Fallback
+  let siteTitle = extract("TITLE") || dossier.chosenAngle;
+  siteTitle = siteTitle.charAt(0).toUpperCase() + siteTitle.slice(1);
+  
+  let siteExcerpt = extract("EXCERPT") || "Профессиональный разбор темы";
+  let siteContent = extract("CONTENT") || `<p>${draft}</p>`;
+  let telegramTitle = extract("TG_TITLE") || siteTitle;
+  let telegramPost = extract("TG_POST") || "Подробнее на сайте";
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
@@ -250,7 +259,15 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       continue;
     }
 
-    const versions = await generateVersions(dossier);
+    // STEP 2: Scientific Draft
+    console.time("Pipeline Step 2 (Draft)");
+    const draft = await generateScientificDraft(dossier);
+    console.timeEnd("Pipeline Step 2 (Draft)");
+
+    // STEP 3: Humanizer
+    console.time("Pipeline Step 3 (Humanizer)");
+    const versions = await humanizeDraft(draft, dossier);
+    console.timeEnd("Pipeline Step 3 (Humanizer)");
     
     const siteContent = sanitizeContent(versions.siteContent || "").trim();
     const slug = slugify(versions.siteTitle || currentTopic);
