@@ -22,6 +22,9 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
 
   // 3. Удаляем любые сгенерированные ИИ блоки источников (мы добавим свои программно)
   cleanText = cleanText.replace(/<h2>\s*(Источники|Литература)\s*<\/h2>[\s\S]*$/i, "");
+  cleanText = cleanText.replace(/##\s*(Источники|Литература)[\s\S]*$/i, "");
+  // Удаляем нумерованные ссылки [1], [2] и т.д.
+  cleanText = cleanText.replace(/\[\d+\]/g, "");
 
   // 4. Проверяем внешние PMID/DOI
   const validPmids = dossier.evidence.map(e => e.pmid).filter(Boolean) as string[];
@@ -64,8 +67,13 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
 function markdownToHtml(md: string): string {
   if (!md) return "";
   let html = md;
-  // Если уже HTML — возвращаем как есть
-  if (html.includes("<h2>") || html.includes("<p>")) return html;
+  
+  // Если внутри <p> есть Markdown (## или - ), вырезаем его из <p>
+  if (html.includes("<p>") && (html.includes("##") || html.includes("- "))) {
+    html = html.replace(/<p>([\s\S]*?)<\/p>/gi, "$1");
+  }
+  // Если уже чистый HTML (без Markdown) — возвращаем как есть
+  if (!html.includes("##") && !html.includes("- ") && !html.includes("**")) return html;
   
   // Заголовки
   html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
@@ -313,7 +321,12 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let siteExcerpt = extract("EXCERPT") || "Профессиональный разбор темы";
   let siteContent = markdownToHtml(extract("CONTENT")) || `<p>${draft}</p>`;
   let telegramTitle = extract("TG_TITLE") || siteTitle;
-  let telegramPost = extract("TG_POST") || "Подробнее на сайте";
+  let telegramPost = extract("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim();
+  if (!telegramPost) {
+    // Fallback: ищем текст после [TG_POST] до конца или до следующего маркера
+    const tgFallback = rawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
+    telegramPost = tgFallback ? tgFallback[1].trim() : "Подробнее на сайте";
+  }
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
