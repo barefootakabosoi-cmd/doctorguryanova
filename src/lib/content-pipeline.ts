@@ -48,21 +48,21 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
 
 Сформируй JSON:
 {
-  "interventionMatches": boolean, // true, ТОЛЬКО если вмешательство в источнике совпадает с темой. (Например: тема "биорегуляторы", а источники про "мануальную терапию" -> false)
+  "interventionMatches": boolean, // true, ТОЛЬКО если вмешательство в источнике совпадает с темой.
   "relevantSources": number,
   "highQuality": number, // RCT, meta-analysis, systematic review, guideline
   "mediumQuality": number, // Когортные, обсервационные, обзоры (reviews)
   "clinicalCases": number,
-  "isSufficient": boolean, // СТРОГО: true, если (highQuality >= 1) ИЛИ (mediumQuality >= 2 И clinicalCases == 0). В остальных случаях false.
-  "reason": "Краткое объяснение решения (почему Pass или Pivot)",
+  "isSufficient": boolean, // СТРОГО: true, если (highQuality >= 1) ИЛИ (mediumQuality >= 2 И clinicalCases == 0).
+  "reason": "Краткое объяснение решения",
   "dossier": {
-    "chosenAngle": "Уточненная тема на основе источников",
-    "keyFacts": ["Только факты из источников"],
-    "whatIsKnown": ["Что известно"],
-    "whatIsNotKnown": ["Чего мы не знаем"],
+    "chosenAngle": "Уточненная тема",
+    "keyFacts": ["Факты"],
+    "whatIsKnown": ["Известно"],
+    "whatIsNotKnown": ["Неизвестно"],
     "limitations": ["Ограничения"],
-    "safeClaims": ["Безопасные выводы"],
-    "confidence": "high (если RCT/Мета-анализ) | medium (если обзоры/когорты) | low (если обсервационные)"
+    "safeClaims": ["Выводы"],
+    "confidence": "high | medium | low"
   }
 }`;
 
@@ -72,14 +72,20 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
       temperature: 0.2,
       max_tokens: 1000,
     });
-
+    
     let rawText = result.choices[0]?.message?.content ?? "{}";
+    console.log("[ScienceGate] GigaChat raw response:", rawText);
+    
+    // Извлекаем JSON
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (jsonMatch) rawText = jsonMatch[0];
-
+    
+    // Авто-ремонт JSON: одинарные кавычки -> двойные, убираем trailing commas
+    rawText = rawText.replace(/'/g, '"').replace(/,\s*([\]}])/g, '$1');
+    
     const parsed = JSON.parse(rawText);
-
-    // Структурированный лог для Vercel
+    
+    // Структурированный лог
     console.log(`[ScienceGate] 
       topic: ${topic}
       sources: ${articles.length}
@@ -92,7 +98,7 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
       reason: ${parsed.reason || 'unknown'}
     `);
 
-    // Серверная проверка (не доверяем математике GigaChat)
+    // Серверная математика (не доверяем GigaChat)
     const isMathSufficient = (parsed.highQuality >= 1) || (parsed.mediumQuality >= 2 && parsed.clinicalCases === 0);
     const finalIsSufficient = isMathSufficient && parsed.interventionMatches;
 
