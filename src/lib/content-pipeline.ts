@@ -79,10 +79,13 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (jsonMatch) rawText = jsonMatch[0];
     
-    // ЖЁСТКАЯ ОЧИСТКА JSON: вырезаем комментарии (// ...), меняем одинарные кавычки, убираем trailing commas
+    // ЖЁСТКАЯ ОЧИСТКА JSON: вырезаем комментарии (// ...), меняем одинарные кавычки, убираем trailing commas, чиним Python Booleans
     rawText = rawText.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '') // comments
                      .replace(/'/g, '"') // single quotes
-                     .replace(/,\s*([}\]])/g, '$1'); // trailing commas
+                     .replace(/,\s*([}\]])/g, '$1') // trailing commas
+                     .replace(/\bTrue\b/g, 'true')
+                     .replace(/\bFalse\b/g, 'false')
+                     .replace(/\bNone\b/g, 'null');
     
     const parsed = JSON.parse(rawText);
     
@@ -93,7 +96,21 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
     const finalIsSufficient = isMathSufficient && parsed.interventionMatches;
 
     if (finalIsSufficient && parsed.dossier) {
-      const dossier: ResearchDossier = { topic, ...parsed.dossier, evidence: articles };
+      // Очищаем текстовые поля Dossier от HTML
+      const cleanText = (str: string) => sanitizeHtml(str || "", { allowedTags: [], allowedAttributes: {} });
+      const cleanArray = (arr: string[]) => arr ? arr.map(cleanText) : [];
+      
+      const dossier: ResearchDossier = {
+        topic,
+        chosenAngle: cleanText(parsed.dossier.chosenAngle),
+        keyFacts: cleanArray(parsed.dossier.keyFacts),
+        whatIsKnown: cleanArray(parsed.dossier.whatIsKnown),
+        whatIsNotKnown: cleanArray(parsed.dossier.whatIsNotKnown),
+        limitations: cleanArray(parsed.dossier.limitations),
+        safeClaims: cleanArray(parsed.dossier.safeClaims),
+        confidence: parsed.dossier.confidence,
+        evidence: articles,
+      };
       return { isSufficient: true, dossier };
     } else {
       return { isSufficient: false, reason: parsed.reason || "insufficient evidence" };
