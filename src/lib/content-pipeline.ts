@@ -251,7 +251,13 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
 
 function generateSourcesBlock(articles: EvidenceItem[]): string {
   if (articles.length === 0) return "";
-  const sources = articles.map(a => `<li><a href="${a.url}" target="_blank" rel="noopener">${a.title}</a> — ${a.journal}, ${a.pubDate}</li>`).join("");
+  const sources = articles.map(a => {
+    // Экранируем HTML в данных источника
+    const safeTitle = a.title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const safeJournal = (a.journal || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const safeUrl = a.url.replace(/"/g, "&quot;");
+    return `<li><a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTitle}</a> — ${safeJournal}, ${a.pubDate}</li>`;
+  }).join("");
   return `\n<h2>Источники</h2>\n<ul>${sources}</ul>`;
 }
 
