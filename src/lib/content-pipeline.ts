@@ -6,6 +6,15 @@ import type { BlogPost } from "./blog-data";
 import type { ResearchDossier, EvidenceItem, GeneratedContent } from "./research-dossier";
 import sanitizeHtml from "sanitize-html";
 
+// Очистка текста от битых символов кодировки (например, к��гнитивно)
+function sanitizeBadEncoding(text: string): string {
+  if (!text) return "";
+  // Удаляем символ замены (U+FFFD) и другие нечитаемые символы
+  return text.replace(/\uFFFD/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+}
+
+
+
 function sanitizeContent(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: ["h2", "h3", "p", "ul", "ol", "li", "strong", "em", "a", "blockquote"],
@@ -191,8 +200,8 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let siteTitle = extractBlock("TITLE").replace(/\\[\\/?TITLE\\]/g, '').trim() || dossier.chosenAngle;
   let siteExcerpt = extractBlock("EXCERPT").replace(/\\[\\/?EXCERPT\\]/g, '').trim() || "Профессиональный разбор темы";
   let siteContent = extractBlock("CONTENT").replace(/\\[\\/?CONTENT\\]/g, '').trim() || `<p>${rawText}</p>`;
-  let telegramTitle = extractBlock("TG_TITLE").replace(/\\[\\/?TG_TITLE\\]/g, '').trim() || siteTitle;
-  let telegramPost = extractBlock("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim() || "Подробнее на сайте";
+  let telegramTitle = sanitizeBadEncoding(extractBlock("TG_TITLE").replace(/\\[\\/?TG_TITLE\\]/g, '').trim()) || siteTitle;
+  let telegramPost = sanitizeBadEncoding(extractBlock("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim()) || "Подробнее на сайте";
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
