@@ -38,7 +38,7 @@ export type GenerationResult =
   | { status: "success"; content: GeneratedContent }
   | { status: "no_suitable_topic" };
 
-// SCIENCE GATE: Оценка релевантности и достаточности источников
+// SCIENCE GATE
 async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promise<{ isSufficient: boolean; dossier?: ResearchDossier; reason?: string }> {
   if (articles.length === 0) return { isSufficient: false, reason: "no sources found" };
 
@@ -46,14 +46,14 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
 Источники:
  ${articles.map((a, i) => `${i+1}. ${a.title} (${a.journal}, ${a.pubDate}). Abstract: ${a.abstract}`).join("\n\n")}
 
-Сформируй JSON:
+Сформируй JSON БЕЗ КОММЕНТАРИЕВ:
 {
-  "interventionMatches": boolean, // true, ТОЛЬКО если вмешательство в источнике совпадает с темой.
+  "interventionMatches": boolean,
   "relevantSources": number,
-  "highQuality": number, // RCT, meta-analysis, systematic review, guideline
-  "mediumQuality": number, // Когортные, обсервационные, обзоры (reviews)
+  "highQuality": number,
+  "mediumQuality": number,
   "clinicalCases": number,
-  "isSufficient": boolean, // СТРОГО: true, если (highQuality >= 1) ИЛИ (mediumQuality >= 2 И clinicalCases == 0).
+  "isSufficient": boolean,
   "reason": "Краткое объяснение решения",
   "dossier": {
     "chosenAngle": "Уточненная тема",
@@ -76,41 +76,27 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
     let rawText = result.choices[0]?.message?.content ?? "{}";
     console.log("[ScienceGate] GigaChat raw response:", rawText);
     
-    // Извлекаем JSON
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (jsonMatch) rawText = jsonMatch[0];
     
-    // Авто-ремонт JSON: одинарные кавычки -> двойные, убираем trailing commas
-    rawText = rawText.replace(/'/g, '"').replace(/,\s*([\]}])/g, '$1');
+    // ЖЁСТКАЯ ОЧИСТКА JSON: вырезаем комментарии (// ...), меняем одинарные кавычки, убираем trailing commas
+    rawText = rawText.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '') // comments
+                     .replace(/'/g, '"') // single quotes
+                     .replace(/,\s*([}\]])/g, '$1'); // trailing commas
     
     const parsed = JSON.parse(rawText);
     
-    // Структурированный лог
-    console.log(`[ScienceGate] 
-      topic: ${topic}
-      sources: ${articles.length}
-      relevant: ${parsed.relevantSources || 0}
-      highQuality: ${parsed.highQuality || 0}
-      mediumQuality: ${parsed.mediumQuality || 0}
-      clinicalCases: ${parsed.clinicalCases || 0}
-      interventionMatches: ${parsed.interventionMatches}
-      decision: ${parsed.isSufficient ? 'PASS' : 'PIVOT'}
-      reason: ${parsed.reason || 'unknown'}
-    `);
+    console.log(`[ScienceGate] topic: ${topic} | high: ${parsed.highQuality || 0} | med: ${parsed.mediumQuality || 0} | cases: ${parsed.clinicalCases || 0} | match: ${parsed.interventionMatches}`);
 
-    // Серверная математика (не доверяем GigaChat)
+    // Серверная математика
     const isMathSufficient = (parsed.highQuality >= 1) || (parsed.mediumQuality >= 2 && parsed.clinicalCases === 0);
     const finalIsSufficient = isMathSufficient && parsed.interventionMatches;
 
     if (finalIsSufficient && parsed.dossier) {
-      const dossier: ResearchDossier = {
-        topic,
-        ...parsed.dossier,
-        evidence: articles,
-      };
+      const dossier: ResearchDossier = { topic, ...parsed.dossier, evidence: articles };
       return { isSufficient: true, dossier };
     } else {
-      return { isSufficient: false, reason: parsed.reason || "insufficient evidence or intervention mismatch" };
+      return { isSufficient: false, reason: parsed.reason || "insufficient evidence" };
     }
   } catch (e) {
     console.error("[ScienceGate] Error:", e);
@@ -118,7 +104,7 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
   }
 }
 
-// VOICE LAYER: Генерация статьи и TG-поста на основе Dossier
+// VOICE LAYER (Использует маркеры вместо JSON)
 async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string }> {
   const prompt = `Ты — медицинский редактор. Напиши материал на основе строго утверждённого Dossier.
 Тема: ${dossier.chosenAngle}
@@ -160,7 +146,6 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   const rawText = result.choices[0]?.message?.content ?? "";
   console.log("[VoiceLayer] GigaChat raw response:", rawText);
 
-  // Парсим по маркерам
   const extract = (tag: string): string => {
     const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[/${tag}\\]`, "i");
     const match = rawText.match(regex);
@@ -176,7 +161,7 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
 
-// MAIN PIPELINE с Adaptive Topic Selection
+// MAIN PIPELINE
 export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GenerationResult> {
   const maxAttempts = 3;
   let currentTopic = topic;
@@ -184,32 +169,29 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     console.log(`[Pipeline] Attempt ${attempt + 1}: ${currentTopic}`);
-
+    
     const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
     const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
     const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
     const allArticles = [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[];
 
     if (allArticles.length === 0) {
-      console.log("[Pipeline] No articles found. Trying new topic.");
       currentCluster = getRandomCluster();
       currentTopic = currentCluster.primary;
       continue;
     }
 
-    // SCIENCE GATE
     const { isSufficient, dossier, reason } = await evaluateEvidence(currentTopic, allArticles);
-
+    
     if (!isSufficient || !dossier) {
-      console.log(`[Pipeline] PIVOT. Reason: ${reason}. Changing angle/topic.`);
+      console.log(`[Pipeline] PIVOT. Reason: ${reason}.`);
       currentCluster = getRandomCluster();
       currentTopic = currentCluster.primary;
       continue;
     }
 
-    // Если доказательств достаточно — генерируем версии
     const versions = await generateVersions(dossier);
-
+    
     const siteContent = sanitizeContent(versions.siteContent || "");
     const slug = slugify(versions.siteTitle || currentTopic);
     const now = new Date().toISOString().split("T")[0];
@@ -238,7 +220,6 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     };
   }
 
-  // Если за 3 попытки не нашли тему — возвращаем технический статус без создания BlogPost
   console.log("[Pipeline] Failed to find sufficient evidence after max attempts. No draft created.");
   return { status: "no_suitable_topic" };
 }
