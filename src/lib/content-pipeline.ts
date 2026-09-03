@@ -113,11 +113,24 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   let parsed: any;
   try {
     let rawText = voiceResult.choices[0]?.message?.content ?? "";
-    rawText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-    parsed = JSON.parse(rawText);
+    // Железобетонный парсинг: вырезаем любой мусор вокруг JSON
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      parsed = JSON.parse(jsonMatch[0]);
+    } else {
+      throw new Error("No JSON found");
+    }
   } catch (e) {
-    console.error("[pipeline] JSON parse failed, fallback to raw text");
-    parsed = { siteTitle: topic, siteExcerpt: "Описание", siteContent: voiceResult.choices[0]?.message?.content, telegramPost: "" };
+    console.error("[pipeline] JSON parse failed, fallback to raw text", e);
+    // Если JSON не спарсился, используем весь текст как статью, чтобы не потерять данные
+    const rawText = voiceResult.choices[0]?.message?.content ?? "";
+    parsed = { 
+      siteTitle: topic, 
+      siteExcerpt: "Профессиональный разбор темы", 
+      siteContent: rawText, 
+      telegramTitle: topic,
+      telegramPost: "Подробнее на сайте" 
+    };
   }
 
   const siteContent = sanitizeContent(parsed.siteContent || "");
