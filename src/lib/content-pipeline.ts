@@ -92,7 +92,11 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
       reason: ${parsed.reason || 'unknown'}
     `);
 
-    if (parsed.isSufficient && parsed.dossier && parsed.interventionMatches) {
+    // Серверная проверка (не доверяем математике GigaChat)
+    const isMathSufficient = (parsed.highQuality >= 1) || (parsed.mediumQuality >= 2 && parsed.clinicalCases === 0);
+    const finalIsSufficient = isMathSufficient && parsed.interventionMatches;
+
+    if (finalIsSufficient && parsed.dossier) {
       const dossier: ResearchDossier = {
         topic,
         ...parsed.dossier,
