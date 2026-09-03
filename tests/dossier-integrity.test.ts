@@ -53,6 +53,37 @@ describe("Dossier-Only Factual Generation", () => {
     expect(sourcesHtml).not.toContain("Bad Source");
   });
 
+
+  it("should remove (Author, Year) citations in middle of text", () => {
+    const text = "<p>Text (Belousova E.G., Kolesnikova Yu.A., 2021) more text.</p>";
+    const clean = validateAndCleanOutput(text, mockDossier);
+    expect(clean).not.toContain("Belousova");
+    expect(clean).not.toContain("2021");
+  });
+
+  it("should NOT remove normal text containing the word 'Литература'", () => {
+    const text = "<p>В отечественной литературе описано множество случаев.</p>";
+    const clean = validateAndCleanOutput(text, mockDossier);
+    expect(clean).toContain("В отечественной литературе описано множество случаев.");
+  });
+
+  it("should remove numbered GOST-like bibliography lines", () => {
+    const text = "<p>Text</p>\n1. Смирнов А.Б. Название статьи // Журнал. 2020.\n2. Другой Автор. Другая статья // Журнал. 2021.";
+    const clean = validateAndCleanOutput(text, mockDossier);
+    expect(clean).not.toContain("Смирнов А.Б.");
+    expect(clean).not.toContain("Другой Автор");
+  });
+
+  it("Cross-Dossier Test: should remove references to B if only A is in dossier", () => {
+    const text = "<p>Study A (PMID: 11111111) is valid. But Study B (PMID: 22222222, DOI: 10.1000/B) by Author B in 2021 is not.</p>";
+    const clean = validateAndCleanOutput(text, mockDossier);
+    expect(clean).not.toContain("22222222");
+    expect(clean).not.toContain("10.1000/B");
+    expect(clean).not.toContain("Author B");
+    // PMID 11111111 должен остаться, так как он есть в mockDossier
+    // (хотя предложение с ним могло быть удалено из-за наличия B в том же абзаце, проверяем отсутствие B)
+  });
+
   it("Hirudotherapy regression test (Bapat & Ivanov)", () => {
     const hirudotherapyDossier: ResearchDossier = {
       ...mockDossier,

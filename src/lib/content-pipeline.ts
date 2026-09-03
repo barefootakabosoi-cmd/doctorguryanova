@@ -14,19 +14,27 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
   // 1. Удаляем выдуманных авторов и атрибуции
   cleanText = cleanText.replace(/<p>\s*Автор:[\s\S]*?<\/p>/gi, "");
   cleanText = cleanText.replace(/Автор:\s*[А-Яа-яЁё\s\.\,]+/gi, "");
-  cleanText = cleanText.replace(/Иванов\s*И\.И\./gi, "");
+  cleanText = cleanText.replace(/Иванов\s*[А-Я]\.\s*[А-Я]\./gi, "");
 
   // 2. Удаляем шаблонный мусор ("ознакомьтесь с полным текстом...")
   cleanText = cleanText.replace(/<p>[^<]*(Для получения подробной информации|ознакомьтесь с полным текстом)[^<]*<\/p>/gi, "");
   cleanText = cleanText.replace(/(Для получения подробной информации|ознакомьтесь с полным текстом)[\s\S]*?\./gi, "");
 
-  // 3. Удаляем любые сгенерированные ИИ блоки источников (мы добавим свои программно)
-  cleanText = cleanText.replace(/<h2>\s*(Источники|Литература)\s*<\/h2>[\s\S]*$/i, "");
-  cleanText = cleanText.replace(/##\s*(Источники|Литература)[\s\S]*$/i, "");
-  // Удаляем нумерованные ссылки [1], [2] и т.д.
+  // 3. Удаляем ЛЮБЫЕ сгенерированные ИИ блоки источников (строго по заголовкам)
+  cleanText = cleanText.replace(/(##|<h2[^>]*>)\s*(Литература|Источники|Библиография)[\s\S]*$/i, "");
+
+  // 4. Удаляем нумерованные ссылки [1], [2] и т.д.
   cleanText = cleanText.replace(/\[\d+\]/g, "");
 
-  // 4. Проверяем внешние PMID/DOI
+  // 5. Удаляем ссылки в формате (Фамилия И.О., Год) или (Familia et al., God)
+  // Жадный regex: ловит любые символы в скобках, если там есть 4 цифры (год)
+  cleanText = cleanText.replace(/\([^)]*?(?:19|20)\d{2}[^)]*?\)/g, "");
+
+  // 6. Удаляем строки, похожие на типичный список литературы (начинающиеся с цифры, точки и заглавной буквы)
+  // Жадный regex до конца строки
+  cleanText = cleanText.replace(/^\s*\d+\.\s+[А-ЯЁA-Z].*$/gm, "");
+
+  // 7. Проверяем внешние PMID/DOI
   const validPmids = dossier.evidence.map(e => e.pmid).filter(Boolean) as string[];
   const validDois = dossier.evidence.map(e => e.doi).filter(Boolean) as string[];
 
@@ -37,9 +45,7 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
     if (!pmidInnerMatch) continue;
     const pmid = pmidInnerMatch[0];
     if (!validPmids.includes(pmid)) {
-      // Удаляем ВЕСЬ АБЗАЦ <p> с внешним PMID (чтобы убрать выдуманных авторов вроде Bapat)
       cleanText = cleanText.replace(new RegExp(`<p>[^<]*${match}[^<]*<\/p>`, "gi"), "");
-      // Запасной вариант: удаляем предложение
       cleanText = cleanText.replace(new RegExp(`[^.]*${match}[^.]*\.`, "gi"), "");
     }
   }
@@ -54,7 +60,7 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
     }
   }
 
-  // Очищаем от пустых тегов, если они остались после удаления
+// Очищаем от пустых тегов, если они остались после удаления
   cleanText = cleanText.replace(/<p>\s*<\/p>/gi, "");
   cleanText = cleanText.replace(/<li>\s*<\/li>/gi, "");
 
@@ -306,11 +312,12 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let rawText = result.choices[0]?.message?.content ?? "";
   // Вырезаем возможные Markdown code-blocks (```)
   rawText = rawText.replace(/```[a-z]*\\n?/g, '').replace(/```/g, '');
-  console.log("[Humanizer] GigaChat raw response:", rawText);
+  const plainRawText = rawText.replace(/<[^>]+>/g, '');
+  console.log("[Humanizer] GigaChat raw response:", plainRawText);
 
   const extract = (tag: string): string => {
     const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[/${tag}\\]`, "i");
-    const match = rawText.match(regex);
+    const match = plainRawText.match(regex);
     return match ? match[1].trim() : "";
   };
 
@@ -324,8 +331,12 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let telegramPost = extract("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim();
   if (!telegramPost) {
     // Fallback: ищем текст после [TG_POST] до конца или до следующего маркера
-    const tgFallback = rawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
-    telegramPost = tgFallback ? tgFallback[1].trim() : "Подробнее на сайте";
+    const tgFallback = plainRawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
+    telegramPost = tgFallback ? tgFallback[1].trim() : "";
+  }
+  // Если TG-пост пустой, используем описание статьи (лучше, чем заглушка)
+  if (!telegramPost) {
+    telegramPost = siteExcerpt || "Профессиональный разбор темы. Подробнее на сайте:";
   }
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
