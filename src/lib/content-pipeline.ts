@@ -6,6 +6,60 @@ import type { BlogPost } from "./blog-data";
 import type { ResearchDossier, EvidenceItem, GeneratedContent } from "./research-dossier";
 import sanitizeHtml from "sanitize-html";
 
+// Детерминированная очистка вывода от ИИ-галлюцинаций (внешних PMID, DOI, авторов, мусора)
+export function validateAndCleanOutput(text: string, dossier: ResearchDossier): string {
+  if (!text) return "";
+  let cleanText = text;
+
+  // 1. Удаляем выдуманных авторов и атрибуции
+  cleanText = cleanText.replace(/<p>\s*Автор:[\s\S]*?<\/p>/gi, "");
+  cleanText = cleanText.replace(/Автор:\s*[А-Яа-яЁё\s\.\,]+/gi, "");
+  cleanText = cleanText.replace(/Иванов\s*И\.И\./gi, "");
+
+  // 2. Удаляем шаблонный мусор ("ознакомьтесь с полным текстом...")
+  cleanText = cleanText.replace(/<p>[^<]*(Для получения подробной информации|ознакомьтесь с полным текстом)[^<]*<\/p>/gi, "");
+  cleanText = cleanText.replace(/(Для получения подробной информации|ознакомьтесь с полным текстом)[\s\S]*?\./gi, "");
+
+  // 3. Удаляем любые сгенерированные ИИ блоки источников (мы добавим свои программно)
+  cleanText = cleanText.replace(/<h2>\s*(Источники|Литература)\s*<\/h2>[\s\S]*$/i, "");
+
+  // 4. Проверяем внешние PMID/DOI
+  const validPmids = dossier.evidence.map(e => e.pmid).filter(Boolean) as string[];
+  const validDois = dossier.evidence.map(e => e.doi).filter(Boolean) as string[];
+
+  // Ищем PMID (обычно 7-8 цифр)
+  const pmidMatches = cleanText.match(/PMID:?\s*\d{7,8}/gi) || [];
+  for (const match of pmidMatches) {
+    const pmidInnerMatch = match.match(/\d{7,8}/);
+    if (!pmidInnerMatch) continue;
+    const pmid = pmidInnerMatch[0];
+    if (!validPmids.includes(pmid)) {
+      // Удаляем ВЕСЬ АБЗАЦ <p> с внешним PMID (чтобы убрать выдуманных авторов вроде Bapat)
+      cleanText = cleanText.replace(new RegExp(`<p>[^<]*${match}[^<]*<\/p>`, "gi"), "");
+      // Запасной вариант: удаляем предложение
+      cleanText = cleanText.replace(new RegExp(`[^.]*${match}[^.]*\.`, "gi"), "");
+    }
+  }
+
+  // Ищем DOI
+  const doiMatches = cleanText.match(/10\.\d{4,}\/[^\s"<>]+/gi) || [];
+  for (const match of doiMatches) {
+    const doi = match.replace(/\.$/, "");
+    if (!validDois.some(d => doi.includes(d))) {
+      cleanText = cleanText.replace(new RegExp(`<p>[^<]*${match}[^<]*<\/p>`, "gi"), "");
+      cleanText = cleanText.replace(new RegExp(`[^.]*${match}[^.]*\.`, "gi"), "");
+    }
+  }
+
+  // Очищаем от пустых тегов, если они остались после удаления
+  cleanText = cleanText.replace(/<p>\s*<\/p>/gi, "");
+  cleanText = cleanText.replace(/<li>\s*<\/li>/gi, "");
+
+  return cleanText.trim();
+}
+
+
+
 // Конвертер Markdown -> HTML (для упрямого GigaChat)
 function markdownToHtml(md: string): string {
   if (!md) return "";
@@ -326,7 +380,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       slug,
       title: versions.siteTitle || currentTopic,
       excerpt: versions.siteExcerpt || `Профессиональный разбор: ${currentTopic}`,
-      content: siteContent + generateSourcesBlock(allArticles),
+      content: siteContent + generateSourcesBlock(dossier.evidence),
       keywords: currentCluster ? [currentCluster.primary] : [currentTopic],
       type: "research",
       publishedAt: now,
@@ -350,7 +404,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   return { status: "no_suitable_topic" };
 }
 
-function generateSourcesBlock(articles: EvidenceItem[]): string {
+export function generateSourcesBlock(articles: EvidenceItem[]): string {
   if (articles.length === 0) return "";
   const sources = articles.map(a => {
     // Экранируем HTML в данных источника
