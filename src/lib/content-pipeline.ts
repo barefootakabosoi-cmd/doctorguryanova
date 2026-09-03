@@ -306,11 +306,12 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let rawText = result.choices[0]?.message?.content ?? "";
   // Вырезаем возможные Markdown code-blocks (```)
   rawText = rawText.replace(/```[a-z]*\\n?/g, '').replace(/```/g, '');
-  console.log("[Humanizer] GigaChat raw response:", rawText);
+  const plainRawText = rawText.replace(/<[^>]+>/g, '');
+  console.log("[Humanizer] GigaChat raw response:", plainRawText);
 
   const extract = (tag: string): string => {
     const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[/${tag}\\]`, "i");
-    const match = rawText.match(regex);
+    const match = plainRawText.match(regex);
     return match ? match[1].trim() : "";
   };
 
@@ -324,8 +325,12 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let telegramPost = extract("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim();
   if (!telegramPost) {
     // Fallback: ищем текст после [TG_POST] до конца или до следующего маркера
-    const tgFallback = rawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
-    telegramPost = tgFallback ? tgFallback[1].trim() : "Подробнее на сайте";
+    const tgFallback = plainRawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
+    telegramPost = tgFallback ? tgFallback[1].trim() : "";
+  }
+  // Если TG-пост пустой, используем описание статьи (лучше, чем заглушка)
+  if (!telegramPost || telegramPost.length < 20) {
+    telegramPost = siteExcerpt || "Профессиональный разбор темы. Подробнее на сайте:";
   }
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
