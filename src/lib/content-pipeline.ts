@@ -162,7 +162,7 @@ HTML-статья для сайта. Структура: <h2>Введение</h
    - 1-2 предложения: суть проблемы (например, что часто беспокоит пациентов).
    - 2-3 предложения: что показало исследование (только факты из Dossier).
    - 1 предложение: ограничение или важное предупреждение (например, "метод не заменяет основное лечение").
-   - 1 предложение: мягкий призыв (например, "Подробнее о механизмах действия — в полной статье на сайте:").
+   - 1 предложение: мягкий призыв. СТРОГО используй эту фразу: "Подробнее о механизмах действия — в полной статье на сайте:"
 Текст должен быть разделен на абзацы пустой строкой.
 [/TG_POST]`;
 
@@ -228,7 +228,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
 
     const versions = await generateVersions(dossier);
     
-    const siteContent = sanitizeContent(versions.siteContent || "");
+    const siteContent = sanitizeContent(versions.siteContent || "").trim();
     const slug = slugify(versions.siteTitle || currentTopic);
     const now = new Date().toISOString().split("T")[0];
 
