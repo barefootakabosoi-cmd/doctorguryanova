@@ -131,6 +131,7 @@ async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: 
 Безопасные выводы: ${dossier.safeClaims.join("; ")}
 
 ЗАПРЕЩЕНО выдумывать новые факты, цифры или дозировки.
+ЗАПРЕЩЕНО писать список источников в конце статьи (источники будут добавлены автоматически).
 
 Ответь СТРОГО в следующем формате (без JSON, используй маркеры):
 
@@ -163,17 +164,24 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   const rawText = result.choices[0]?.message?.content ?? "";
   console.log("[VoiceLayer] GigaChat raw response:", rawText);
 
-  const extract = (tag: string): string => {
-    const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[/${tag}\\]`, "i");
-    const match = rawText.match(regex);
+  // Пуленепробиваемый экстрактор: если нет закрывающего тега, берет до следующего маркера
+  const extractBlock = (startTag: string): string => {
+    const regex = new RegExp(`\\[${startTag}\\]([\\s\\S]*?)\\[/${startTag}\\]`, "i");
+    let match = rawText.match(regex);
+    if (match) return match[1].trim();
+    
+    // Fallback: если закрывающий тег забыт, берем до следующего маркера [...
+    const fallbackRegex = new RegExp(`\\[${startTag}\\]([\\s\\S]*?)(?:\\[\\/?[A-Z_]+\\]|$)`, "i");
+    match = rawText.match(fallbackRegex);
     return match ? match[1].trim() : "";
   };
 
-  const siteTitle = extract("TITLE") || dossier.chosenAngle;
-  const siteExcerpt = extract("EXCERPT") || "Профессиональный разбор темы";
-  const siteContent = extract("CONTENT") || `<p>${rawText}</p>`;
-  const telegramTitle = extract("TG_TITLE") || siteTitle;
-  const telegramPost = extract("TG_POST") || "Подробнее на сайте";
+  // Очищаем от возможных остатков маркеров
+  let siteTitle = extractBlock("TITLE").replace(/\\[\\/?TITLE\\]/g, '').trim() || dossier.chosenAngle;
+  let siteExcerpt = extractBlock("EXCERPT").replace(/\\[\\/?EXCERPT\\]/g, '').trim() || "Профессиональный разбор темы";
+  let siteContent = extractBlock("CONTENT").replace(/\\[\\/?CONTENT\\]/g, '').trim() || `<p>${rawText}</p>`;
+  let telegramTitle = extractBlock("TG_TITLE").replace(/\\[\\/?TG_TITLE\\]/g, '').trim() || siteTitle;
+  let telegramPost = extractBlock("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim() || "Подробнее на сайте";
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
