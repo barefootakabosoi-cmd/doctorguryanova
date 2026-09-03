@@ -7,6 +7,7 @@ export default function EditDraftPage() {
   const params = useParams();
   const draftId = params.draftId as string;
   const [loading, setLoading] = useState(true);
+  const [dossier, setDossier] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [title, setTitle] = useState("");
@@ -94,6 +95,17 @@ export default function EditDraftPage() {
       {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded mb-4">{success}</div>}
 
       <div className="space-y-4">
+        {dossier && dossier.articles && dossier.articles.length > 0 && (
+          <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+            <h4 className="text-sm font-bold mb-2">Научные источники (Dossier)</h4>
+            <ul className="text-xs space-y-1 list-disc list-inside">
+              {dossier.articles.map((a: any, i: number) => (
+                <li key={i}><a href={a.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{a.title}</a> ({a.journal})</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-medium mb-1">Заголовок сайта (SEO)</label>
           <input value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded p-2 text-sm" />
