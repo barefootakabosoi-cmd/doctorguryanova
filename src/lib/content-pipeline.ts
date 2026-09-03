@@ -6,6 +6,53 @@ import type { BlogPost } from "./blog-data";
 import type { ResearchDossier, EvidenceItem, GeneratedContent } from "./research-dossier";
 import sanitizeHtml from "sanitize-html";
 
+// Конвертер Markdown -> HTML (для упрямого GigaChat)
+function markdownToHtml(md: string): string {
+  if (!md) return "";
+  let html = md;
+  // Если уже HTML — возвращаем как есть
+  if (html.includes("<h2>") || html.includes("<p>")) return html;
+  
+  // Заголовки
+  html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+  html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+  
+  // Bold/Italic
+  html = html.replace(/\\*\\*(.+?)\\*\\*/g, "<strong>$1</strong>");
+  html = html.replace(/__(.+?)__/g, "<strong>$1</strong>");
+  
+  // Списки
+  const lines = html.split("\\n");
+  let inList = false;
+  const result: string[] = [];
+  for (const line of lines) {
+    if (line.match(/^[-*] /)) {
+      const liContent = line.replace(/^[-*] /, "").replace(/\\*\\*(.*?)\\*\\*/g, "<strong>$1</strong>");
+      if (!inList) { result.push("<ul>"); inList = true; }
+      result.push(`<li>${liContent}</li>`);
+    } else {
+      if (inList) { result.push("</ul>"); inList = false; }
+      result.push(line);
+    }
+  }
+  if (inList) result.push("</ul>");
+  html = result.join("\\n");
+  
+  // Параграфы
+  const paragraphs = html.split(/\\n\\n+/);
+  html = paragraphs.map(p => {
+    const trimmed = p.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("<h") || trimmed.startsWith("<ul>") || trimmed.startsWith("<li>")) return trimmed;
+    return `<p>${trimmed.replace(/\\n/g, "<br>")}</p>`;
+  }).filter(Boolean).join("\\n");
+  
+  return html;
+}
+
+
+
 // Очистка текста от битых символов кодировки (например, к��гнитивно)
 function sanitizeBadEncoding(text: string): string {
   if (!text) return "";
@@ -194,7 +241,9 @@ HTML-статья для сайта. Структура: <h2>Введение</h
     max_tokens: 2500,
   });
 
-  const rawText = result.choices[0]?.message?.content ?? "";
+  let rawText = result.choices[0]?.message?.content ?? "";
+  // Вырезаем возможные Markdown code-blocks (```)
+  rawText = rawText.replace(/```[a-z]*\\n?/g, '').replace(/```/g, '');
   console.log("[Humanizer] GigaChat raw response:", rawText);
 
   const extract = (tag: string): string => {
@@ -208,7 +257,7 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   siteTitle = siteTitle.charAt(0).toUpperCase() + siteTitle.slice(1);
   
   let siteExcerpt = extract("EXCERPT") || "Профессиональный разбор темы";
-  let siteContent = extract("CONTENT") || `<p>${draft}</p>`;
+  let siteContent = markdownToHtml(extract("CONTENT")) || `<p>${draft}</p>`;
   let telegramTitle = extract("TG_TITLE") || siteTitle;
   let telegramPost = extract("TG_POST") || "Подробнее на сайте";
 
