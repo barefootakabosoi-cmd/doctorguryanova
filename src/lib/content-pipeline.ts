@@ -144,12 +144,19 @@ async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: 
   });
 
   let rawText = result.choices[0]?.message?.content ?? "{}";
+  console.log("[VoiceLayer] GigaChat raw response:", rawText);
+  
+  // Извлекаем JSON
   const jsonMatch = rawText.match(/\{[\s\S]*\}/);
   if (jsonMatch) rawText = jsonMatch[0];
-
+  
+  // Авто-ремонт JSON: одинарные кавычки -> двойные, убираем trailing commas
+  rawText = rawText.replace(/'/g, '"').replace(/,\s*([\]}])/g, '$1');
+  
   try {
     return JSON.parse(rawText);
   } catch (e) {
+    console.error("[VoiceLayer] JSON parse failed, fallback to raw text");
     return { siteTitle: dossier.chosenAngle, siteExcerpt: "Описание", siteContent: rawText, telegramTitle: dossier.chosenAngle, telegramPost: "Подробнее на сайте" };
   }
 }
