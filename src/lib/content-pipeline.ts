@@ -128,14 +128,28 @@ async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: 
 Безопасные выводы: ${dossier.safeClaims.join("; ")}
 
 ЗАПРЕЩЕНО выдумывать новые факты, цифры или дозировки.
-Сгенерируй JSON:
-{
-  "siteTitle": "Заголовок для сайта",
-  "siteExcerpt": "Описание",
-  "siteContent": "<h2>Введение</h2><p>...</p><h2>Что показало исследование</h2>...",
-  "telegramTitle": "Заголовок для TG",
-  "telegramPost": "Короткий пост для TG"
-}`;
+
+Ответь СТРОГО в следующем формате (без JSON, используй маркеры):
+
+[TITLE]
+Заголовок для сайта (до 70 символов)
+[/TITLE]
+
+[EXCERPT]
+Описание для сайта (до 170 символов)
+[/EXCERPT]
+
+[CONTENT]
+HTML-статья для сайта. Структура: <h2>Введение</h2><p>...</p><h2>Что показало исследование</h2>...
+[/CONTENT]
+
+[TG_TITLE]
+Заголовок для Telegram-поста
+[/TG_TITLE]
+
+[TG_POST]
+Короткий пост для Telegram
+[/TG_POST]`;
 
   const result = await chatCompletion({
     messages: [{ role: "user", content: prompt }],
@@ -143,22 +157,23 @@ async function generateVersions(dossier: ResearchDossier): Promise<{ siteTitle: 
     max_tokens: 3000,
   });
 
-  let rawText = result.choices[0]?.message?.content ?? "{}";
+  const rawText = result.choices[0]?.message?.content ?? "";
   console.log("[VoiceLayer] GigaChat raw response:", rawText);
-  
-  // Извлекаем JSON
-  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) rawText = jsonMatch[0];
-  
-  // Авто-ремонт JSON: одинарные кавычки -> двойные, убираем trailing commas
-  rawText = rawText.replace(/'/g, '"').replace(/,\s*([\]}])/g, '$1');
-  
-  try {
-    return JSON.parse(rawText);
-  } catch (e) {
-    console.error("[VoiceLayer] JSON parse failed, fallback to raw text");
-    return { siteTitle: dossier.chosenAngle, siteExcerpt: "Описание", siteContent: rawText, telegramTitle: dossier.chosenAngle, telegramPost: "Подробнее на сайте" };
-  }
+
+  // Парсим по маркерам
+  const extract = (tag: string): string => {
+    const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[/${tag}\\]`, "i");
+    const match = rawText.match(regex);
+    return match ? match[1].trim() : "";
+  };
+
+  const siteTitle = extract("TITLE") || dossier.chosenAngle;
+  const siteExcerpt = extract("EXCERPT") || "Профессиональный разбор темы";
+  const siteContent = extract("CONTENT") || `<p>${rawText}</p>`;
+  const telegramTitle = extract("TG_TITLE") || siteTitle;
+  const telegramPost = extract("TG_POST") || "Подробнее на сайте";
+
+  return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
 
 // MAIN PIPELINE с Adaptive Topic Selection
