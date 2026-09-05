@@ -4,9 +4,9 @@
 
 ### Git
 - branch: main
-- HEAD: 51d5c4f
-- origin/main: e5ae18e
-- working tree: clean (перед созданием этого файла)
+- HEAD: 97aeff0
+- origin/main: e5ae18e (push пока НЕ делался)
+- working tree: после обновления PROJECT_STATE.md будет clean
 
 ### Build
 - результат npm run build: Успешно (Compiled successfully)
@@ -92,6 +92,9 @@
 - В `src/app/blog/[slug]/page.tsx` используется `dangerouslySetInnerHTML`; необходимо отдельно проверить, гарантируется ли санитизация всего контента до рендера. В проекте присутствует `sanitize-html`, но в рамках текущего checkpoint это отдельно не проверялось.
 
 ### Recent commits
+- `97aeff0`: `feat(content): enforce evidence-locked generation`
+- `16ec840`: `feat(validation): harden bibliography scrub and dossier integrity`
+- `20f98b5`: `fix(pipeline): use extract function and forbid numbered refs`
 - `ee607dc`: Добавление кнопок для Дзена/VC и генерации 3 заголовков.
 - `2ff2e1f`: Добавление реальных фото врача в Hero и About. **Важно:** скрипт сообщил, что блок автора в блоге не найден, и фото `doctor-author.jpg` в блог не добавлено.
 - `51e1138`: Переписывание Hero по концепции ChatGPT (оффер, 2 кнопки, блок доказательств).
@@ -99,12 +102,16 @@
 
 ### Current development goal
 
-CHECKPOINT 1 — HOMEPAGE V2
+**Evidence-Locked этап завершён.**
 
-Цель следующего этапа:
-улучшить главную страницу как коммерческую посадочную страницу врача, сохранив существующую рабочую инфраструктуру, SEO и интеграции.
+Следующий шаг — контролируемый production test генерации статьи.
+После production test отдельно проверяется качество реального dossier и generated content.
 
-Пока этот этап НЕ реализован.
+
+### Known limitations / Technical debt (Evidence-Locked)
+
+1.  **Semantic Evidence Checker:** Validator (`validateGeneratedClaims`) не является полноценным семантическим NLP-чекером. Blacklist `forbiddenAmplifiers` не ловит все возможные синонимичные переформулировки усиленных медицинских утверждений (например, "обоснованно работает").
+2.  **Telegram Validation:** Если `validateGeneratedClaims` для `telegramPost` возвращает `FAIL`, текущая логика pipeline сохраняет пустую строку (`""`). Отдельная задача — реализовать регенерацию или fallback для TG-поста.
 
 ### Rules for AI agents
 1. Сначала читать PROJECT_STATE.md.
