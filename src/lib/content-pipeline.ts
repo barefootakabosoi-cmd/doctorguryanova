@@ -6,6 +6,74 @@ import type { BlogPost } from "./blog-data";
 import type { ResearchDossier, EvidenceItem, GeneratedContent } from "./research-dossier";
 import sanitizeHtml from "sanitize-html";
 
+export interface GeneratedClaimsValidation {
+  valid: boolean;
+  text: string;
+  reason?: string;
+}
+
+export function validateGeneratedClaims(text: string, dossier: ResearchDossier): GeneratedClaimsValidation {
+  if (!text) return { valid: true, text: "" };
+  let cleanText = text;
+
+  // 1. Вырезаем библиографию
+  cleanText = cleanText.replace(/(##|<h[2-6][^>]*>|\*\*|####)\s*(Литература|Источники|Список литературы|Библиография)[\s\S]*$/i, "");
+
+  // 2. Вырезаем нумерованные ссылки [1], [1-4]
+  cleanText = cleanText.replace(/\[\d+(?:[-–,\s]+\d+)*\]/g, "");
+
+  // 3. Вырезаем ссылки в скобках с годом (Author, Year)
+  cleanText = cleanText.replace(/\([^)]*?(?:19|20)\d{2}[^)]*?\)/g, "");
+
+  // 4. Вырезаем строки GOST-списка
+  cleanText = cleanText.replace(/^\s*\d+\.\s+.*$/gm, "");
+
+  // 5. Вырезаем любые URL
+  cleanText = cleanText.replace(/https?:\/\/[^\s<]+/gi, "");
+
+  // 6. Проверяем внешние PMID/DOI
+  const validPmids = dossier.evidence.map(e => e.pmid).filter(Boolean) as string[];
+  const validDois = dossier.evidence.map(e => e.doi).filter(Boolean) as string[];
+
+  const pmidMatches = cleanText.match(/PMID:?\s*\d{7,8}/gi) || [];
+  for (const match of pmidMatches) {
+    const pmidInnerMatch = match.match(/\d{7,8}/);
+    if (!pmidInnerMatch) continue;
+    const pmid = pmidInnerMatch[0];
+    if (!validPmids.includes(pmid)) {
+      return { valid: false, text: cleanText, reason: `External PMID detected: ${pmid}` };
+    }
+  }
+
+  const doiMatches = cleanText.match(/10\.\d{4,}\/[^\s"<>]+/gi) || [];
+  for (const match of doiMatches) {
+    const doi = match.replace(/\.$/, "");
+    if (!validDois.some(d => doi.includes(d))) {
+      return { valid: false, text: cleanText, reason: `External DOI detected: ${doi}` };
+    }
+  }
+
+  // 7. Детекция усилителей доказательности (БЕЗ переписывания смысла)
+  const forbiddenAmplifiers = [
+    "доказано", "доказана эффективность", "гарантирует",
+    "является эффективным методом", "проверенный метод",
+    "доказательно работает", "эффективность подтверждена"
+  ];
+  for (const amp of forbiddenAmplifiers) {
+    if (cleanText.match(new RegExp(amp, "gi"))) {
+      return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${amp}` };
+    }
+  }
+
+  // Очищаем пустые теги
+  cleanText = cleanText.replace(/<p>\s*<\/p>/gi, "");
+  cleanText = cleanText.replace(/<li>\s*<\/li>/gi, "");
+
+  return { valid: true, text: cleanText.trim() };
+}
+
+
+
 // Детерминированная очистка вывода от ИИ-галлюцинаций (внешних PMID, DOI, авторов, мусора)
 export function validateAndCleanOutput(text: string, dossier: ResearchDossier): string {
   if (!text) return "";
@@ -73,23 +141,23 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
 function markdownToHtml(md: string): string {
   if (!md) return "";
   let html = md;
-  
+
   // Если внутри <p> есть Markdown (## или - ), вырезаем его из <p>
   if (html.includes("<p>") && (html.includes("##") || html.includes("- "))) {
     html = html.replace(/<p>([\s\S]*?)<\/p>/gi, "$1");
   }
   // Если уже чистый HTML (без Markdown) — возвращаем как есть
   if (!html.includes("##") && !html.includes("- ") && !html.includes("**")) return html;
-  
+
   // Заголовки
   html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
   html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
   html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-  
+
   // Bold/Italic
   html = html.replace(/\\*\\*(.+?)\\*\\*/g, "<strong>$1</strong>");
   html = html.replace(/__(.+?)__/g, "<strong>$1</strong>");
-  
+
   // Списки
   const lines = html.split("\\n");
   let inList = false;
@@ -106,7 +174,7 @@ function markdownToHtml(md: string): string {
   }
   if (inList) result.push("</ul>");
   html = result.join("\\n");
-  
+
   // Параграфы
   const paragraphs = html.split(/\\n\\n+/);
   html = paragraphs.map(p => {
@@ -115,7 +183,7 @@ function markdownToHtml(md: string): string {
     if (trimmed.startsWith("<h") || trimmed.startsWith("<ul>") || trimmed.startsWith("<li>")) return trimmed;
     return `<p>${trimmed.replace(/\\n/g, "<br>")}</p>`;
   }).filter(Boolean).join("\\n");
-  
+
   return html;
 }
 
@@ -158,7 +226,7 @@ function slugify(text: string): string {
     .substring(0, 80);
 }
 
-export type GenerationResult = 
+export type GenerationResult =
   | { status: "success"; content: GeneratedContent }
   | { status: "no_suitable_topic" };
 
@@ -196,13 +264,13 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
       temperature: 0.2,
       max_tokens: 1000,
     });
-    
+
     let rawText = result.choices[0]?.message?.content ?? "{}";
     console.log("[ScienceGate] GigaChat raw response:", rawText);
-    
+
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (jsonMatch) rawText = jsonMatch[0];
-    
+
     // ЖЁСТКАЯ ОЧИСТКА JSON: вырезаем комментарии (// ...), меняем одинарные кавычки, убираем trailing commas, чиним Python Booleans
     rawText = rawText.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '') // comments
                      .replace(/'/g, '"') // single quotes
@@ -210,9 +278,9 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
                      .replace(/\bTrue\b/g, 'true')
                      .replace(/\bFalse\b/g, 'false')
                      .replace(/\bNone\b/g, 'null');
-    
+
     const parsed = JSON.parse(rawText);
-    
+
     console.log(`[ScienceGate] topic: ${topic} | high: ${parsed.highQuality || 0} | med: ${parsed.mediumQuality || 0} | cases: ${parsed.clinicalCases || 0} | match: ${parsed.interventionMatches}`);
 
     // Серверная математика
@@ -223,7 +291,7 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
       // Очищаем текстовые поля Dossier от HTML
       const cleanText = (str: string) => sanitizeHtml(str || "", { allowedTags: [], allowedAttributes: {} });
       const cleanArray = (arr: string[]) => arr ? arr.map(cleanText) : [];
-      
+
       const dossier: ResearchDossier = {
         topic,
         chosenAngle: cleanText(parsed.dossier.chosenAngle),
@@ -324,7 +392,7 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   // Умный Fallback
   let siteTitle = extract("TITLE") || dossier.chosenAngle;
   siteTitle = siteTitle.charAt(0).toUpperCase() + siteTitle.slice(1);
-  
+
   let siteExcerpt = extract("EXCERPT") || "Профессиональный разбор темы";
   let siteContent = markdownToHtml(extract("CONTENT")) || `<p>${draft}</p>`;
   let telegramTitle = extract("TG_TITLE") || siteTitle;
@@ -351,7 +419,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     console.log(`[Pipeline] Attempt ${attempt + 1}: ${currentTopic}`);
-    
+
     const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
     const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
     const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
@@ -371,7 +439,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     }
 
     const { isSufficient, dossier, reason } = await evaluateEvidence(currentTopic, allArticles);
-    
+
     if (!isSufficient || !dossier) {
       console.log(`[Pipeline] PIVOT. Reason: ${reason}.`);
       let nextCluster = getRandomCluster();
@@ -391,12 +459,41 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     const draft = await generateScientificDraft(dossier);
     console.timeEnd("Pipeline Step 2 (Draft)");
 
-    // STEP 3: Humanizer
-    console.time("Pipeline Step 3 (Humanizer)");
-    const versions = await humanizeDraft(draft, dossier);
-    console.timeEnd("Pipeline Step 3 (Humanizer)");
-    
-    const siteContent = sanitizeContent(versions.siteContent || "").trim();
+    // STEP 3: Humanizer с валидацией и регенерацией
+    let versions: { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string };
+    let validation: GeneratedClaimsValidation;
+    let humanizerAttempts = 0;
+    const maxHumanizerAttempts = 3;
+
+    do {
+      console.time(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
+      versions = await humanizeDraft(draft, dossier);
+      console.timeEnd(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
+
+      validation = validateGeneratedClaims(versions.siteContent || "", dossier);
+      if (!validation.valid) {
+        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${validation.reason}`);
+      }
+      humanizerAttempts++;
+    } while (!validation.valid && humanizerAttempts < maxHumanizerAttempts);
+
+    if (!validation.valid) {
+      console.log("[Pipeline] Humanizer failed to produce valid output after max attempts. PIVOT.");
+      let nextCluster = getRandomCluster();
+      let safetyCounter = 0;
+      while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
+        nextCluster = getRandomCluster();
+        safetyCounter++;
+      }
+      currentCluster = nextCluster;
+      currentTopic = currentCluster.primary;
+      attemptedTopics.add(currentTopic);
+      continue;
+    }
+
+    const siteContent = sanitizeContent(validation.text).trim();
+    const tgValidation = validateGeneratedClaims(versions.telegramPost || "", dossier);
+    const telegramPost = tgValidation.valid ? tgValidation.text : "";
     const slug = slugify(versions.siteTitle || currentTopic);
     const now = new Date().toISOString().split("T")[0];
 

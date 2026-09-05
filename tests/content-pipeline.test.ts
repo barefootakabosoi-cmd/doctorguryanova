@@ -1,21 +1,42 @@
 import { describe, it, expect, vi } from "vitest";
 import { generateArticle } from "../src/lib/content-pipeline";
+import { chatCompletion } from "../src/lib/gigachat";
 
-// Мокаем GigaChat и парсеры
 vi.mock("../src/lib/gigachat", () => ({
   chatCompletion: vi.fn()
-    // 1. Science Gate (Биорегуляторы): вмешательство не совпадает -> PIVOT
-    .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
-      interventionMatches: false,
-      relevantSources: 2,
-      highQuality: 0,
-      mediumQuality: 2,
-      clinicalCases: 0,
-      isSufficient: false,
-      reason: "Sources are about manual therapy, not bioregulators"
-    }) } }] })
-    // 2. Science Gate (Новая тема): PASS
-    .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
+}));
+
+// Правильный мок sanitize-html с поддержкой simpleTransform
+vi.mock("sanitize-html", () => {
+  const sanitize = (str: string) => str;
+  (sanitize as any).simpleTransform = () => () => ({ tagName: "a", attribs: {} });
+  return { default: sanitize };
+});
+
+vi.mock("../src/lib/pubmed", () => ({
+  getPubMedArticles: vi.fn().mockResolvedValue([{
+    title: "Test",
+    journal: "J",
+    pubDate: "2024",
+    abstract: "A",
+    url: "http://test.com",
+    pmid: "123",
+    sourceType: "rct"
+  }])
+}));
+
+vi.mock("../src/lib/crossref", () => ({ searchCrossRef: vi.fn().mockResolvedValue([]) }));
+vi.mock("../src/lib/seo-keywords", () => ({
+  getRandomCluster: vi.fn().mockReturnValue({ primary: "New Topic", pubmedQuery: "New Query" }),
+  getClusterByKeyword: vi.fn()
+}));
+
+const mockChat = vi.mocked(chatCompletion);
+
+describe("Pipeline Evidence-Locked v4", () => {
+
+  const mockScienceGatePass = (topic: string) => ({
+    choices: [{ message: { content: JSON.stringify({
       interventionMatches: true,
       relevantSources: 3,
       highQuality: 1,
@@ -23,28 +44,61 @@ vi.mock("../src/lib/gigachat", () => ({
       clinicalCases: 0,
       isSufficient: true,
       reason: "Relevant RCT found",
-      dossier: { chosenAngle: "Test Angle", keyFacts: ["Fact 1"], whatIsKnown: ["Known"], whatIsNotKnown: ["Unknown"], limitations: ["L1"], safeClaims: ["Claim 1"], confidence: "high" }
-    }) } }] })
-    // 3. Scientific Draft
-    .mockResolvedValueOnce({ choices: [{ message: { content: "This is a dry draft." } }] })
-    // 4. Humanizer (Voice Layer)
-    .mockResolvedValueOnce({ choices: [{ message: { content: 
-      "[TITLE]\nTest Title\n[/TITLE]\n\n[EXCERPT]\nTest Excerpt\n[/EXCERPT]\n\n[CONTENT]\n<p>Test Content</p>\n[/CONTENT]\n\n[TG_TITLE]\nTG Title\n[/TG_TITLE]\n\n[TG_POST]\nTG Post\n[/TG_POST]"
-    } }] })
-}));
+      dossier: {
+        chosenAngle: topic,
+        keyFacts: ["Fact 1"],
+        whatIsKnown: ["Known"],
+        whatIsNotKnown: ["Unknown"],
+        limitations: ["L1"],
+        safeClaims: [{ text: "Claim 1", strength: "descriptive", evidenceRefs: ["123"] }],
+        confidence: "high"
+      }
+    }) } }]
+  });
 
-vi.mock("../src/lib/pubmed", () => ({ getPubMedArticles: vi.fn().mockResolvedValue([{ title: "Test", journal: "J", pubDate: "2024", abstract: "A", url: "http://test.com" }]) }));
-vi.mock("../src/lib/crossref", () => ({ searchCrossRef: vi.fn().mockResolvedValue([]) }));
-vi.mock("../src/lib/seo-keywords", () => ({ getRandomCluster: vi.fn().mockReturnValue({ primary: "New Topic", pubmedQuery: "New Query" }), getClusterByKeyword: vi.fn() }));
+  const mockDraft = (text: string) => ({ choices: [{ message: { content: text } }] });
+  const mockHumanizer = (content: string) => ({ choices: [{ message: { content: `[CONTENT]\n${content}\n[/CONTENT]` } }] });
 
-describe("Research Content Engine v1.2 (Strict Gate)", () => {
-  it("should pivot if intervention does not match (Bioregulators case)", async () => {
-    const result = await generateArticle("Bioregulators");
+  it("Test 1: FAIL -> Regeneration -> PASS", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Test Topic 1"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft 1"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Эффективность подтверждена.</p>"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это безопасный вывод.</p>"));
+
+    const result = await generateArticle("Initial Topic");
+
     expect(result.status).toBe("success");
     if (result.status === "success") {
-      expect(result.content.post.title).toBe("Test Title");
-      expect(result.content.post.content).toContain("Test Content");
-      expect(result.content.telegramPost).toBe("TG Post");
+      expect(result.content.post.content).not.toContain("подтверждена");
+      expect(result.content.post.content).toContain("безопасный вывод");
     }
+    expect(mockChat).toHaveBeenCalledTimes(4);
+  });
+
+  it("Test 2: FAIL x3 -> PIVOT -> PASS", async () => {
+    mockChat.mockReset();
+    // Topic 1
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Test Topic 1"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft 1"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Эффективность подтверждена.</p>"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это доказано.</p>"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Гарантирует выздоровление.</p>"));
+
+    // Topic 2 (PIVOT)
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("New Topic"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft 2"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это безопасно.</p>"));
+
+    const result = await generateArticle("Initial Topic");
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content.post.content).not.toContain("доказано");
+      expect(result.content.post.content).not.toContain("подтверждена");
+      expect(result.content.post.content).not.toContain("Гарантирует");
+      expect(result.content.post.content).toContain("безопасно");
+    }
+    expect(mockChat).toHaveBeenCalledTimes(8);
   });
 });
