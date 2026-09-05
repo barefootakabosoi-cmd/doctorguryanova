@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:gigachat": "node scripts/test-gigachat.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -38,5 +39,8 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
     "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }
