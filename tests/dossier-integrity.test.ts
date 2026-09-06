@@ -1,4 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("sanitize-html", () => {
+  const sanitize = (str: string) => str;
+  (sanitize as any).simpleTransform = () => () => ({ tagName: "a", attribs: {} });
+  return { default: sanitize };
+});
 import { validateAndCleanOutput, generateSourcesBlock } from "../src/lib/content-pipeline";
 import { ResearchDossier } from "../src/lib/research-dossier";
 

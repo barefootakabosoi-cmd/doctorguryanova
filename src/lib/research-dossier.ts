@@ -14,6 +14,16 @@ export interface EvidenceItem {
   keyFindings?: string[];
 }
 
+export type ClaimStrength = "descriptive" | "suggestive" | "moderate" | "strong";
+
+/** A claim may be used by the generation pipeline only with explicit source IDs. */
+export interface SafeClaim {
+  text: string;
+  strength: ClaimStrength;
+  /** Stable IDs from the evidence list: PMID:12345678 or DOI:10.xxxx/yyy. */
+  evidenceRefs: string[];
+}
+
 export interface ResearchDossier {
   topic: string;
   chosenAngle: string;
@@ -22,7 +32,7 @@ export interface ResearchDossier {
   whatIsKnown: string[];
   whatIsNotKnown: string[];
   limitations: string[];
-  safeClaims: string[];
+  safeClaims: SafeClaim[];
   confidence: "high" | "medium" | "low";
 }
 

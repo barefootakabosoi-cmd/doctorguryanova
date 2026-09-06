@@ -3,13 +3,77 @@ import { searchCrossRef } from "./crossref";
 import { chatCompletion } from "./gigachat";
 import { getClusterByKeyword, getRandomCluster, type KeywordCluster } from "./seo-keywords";
 import type { BlogPost } from "./blog-data";
-import type { ResearchDossier, EvidenceItem, GeneratedContent } from "./research-dossier";
+import type { ResearchDossier, EvidenceItem, GeneratedContent, SafeClaim, ClaimStrength } from "./research-dossier";
 import sanitizeHtml from "sanitize-html";
 
 export interface GeneratedClaimsValidation {
   valid: boolean;
   text: string;
   reason?: string;
+}
+
+const CLAIM_STRENGTHS: ClaimStrength[] = ["descriptive", "suggestive", "moderate", "strong"];
+
+function evidenceRefSet(evidence: EvidenceItem[]): Set<string> {
+  return new Set(evidence.flatMap((item) => [
+    item.pmid ? `PMID:${item.pmid}` : "",
+    item.doi ? `DOI:${item.doi.toLowerCase()}` : "",
+  ].filter(Boolean)));
+}
+
+function evidenceCards(evidence: EvidenceItem[]): string {
+  return evidence.map((item) => {
+    const refs = [item.pmid ? `PMID:${item.pmid}` : "", item.doi ? `DOI:${item.doi}` : ""].filter(Boolean).join("; ");
+    return `- ${refs || "NO_STABLE_ID"}: ${item.title} (${item.journal}, ${item.pubDate}). ${item.abstract}`;
+  }).join("\n");
+}
+
+/**
+ * Validates the boundary between the LLM Science Gate and the deterministic
+ * pipeline. In particular, legacy `safeClaims: string[]` is rejected instead
+ * of being silently cast to a trusted dossier.
+ */
+export function createDossierFromScienceGateResponse(
+  topic: string,
+  rawDossier: unknown,
+  evidence: EvidenceItem[]
+): { dossier?: ResearchDossier; reason?: string } {
+  if (!rawDossier || typeof rawDossier !== "object") return { reason: "missing dossier" };
+  const value = rawDossier as Record<string, unknown>;
+  const cleanText = (input: unknown) => sanitizeHtml(typeof input === "string" ? input : "", { allowedTags: [], allowedAttributes: {} }).trim();
+  const cleanArray = (input: unknown): string[] | null =>
+    Array.isArray(input) && input.every((entry) => typeof entry === "string")
+      ? input.map(cleanText).filter(Boolean)
+      : null;
+  const refs = evidenceRefSet(evidence);
+  if (!Array.isArray(value.safeClaims) || value.safeClaims.length === 0) return { reason: "missing safe claims" };
+
+  const safeClaims: SafeClaim[] = [];
+  for (const rawClaim of value.safeClaims) {
+    // Reject legacy string claims explicitly: they have no evidence binding.
+    if (!rawClaim || typeof rawClaim !== "object" || Array.isArray(rawClaim)) return { reason: "legacy or malformed safe claim" };
+    const claim = rawClaim as Record<string, unknown>;
+    const text = cleanText(claim.text);
+    const strength = claim.strength;
+    const evidenceRefs = claim.evidenceRefs;
+    if (!text || typeof strength !== "string" || !CLAIM_STRENGTHS.includes(strength as ClaimStrength) ||
+        !Array.isArray(evidenceRefs) || evidenceRefs.length === 0 || !evidenceRefs.every((ref) => typeof ref === "string" && refs.has(ref.toLowerCase().startsWith("doi:") ? `DOI:${ref.slice(4).toLowerCase()}` : ref))) {
+      return { reason: "safe claim has invalid evidence references" };
+    }
+    safeClaims.push({ text, strength: strength as ClaimStrength, evidenceRefs: evidenceRefs.map(String) });
+  }
+
+  const keyFacts = cleanArray(value.keyFacts);
+  const whatIsKnown = cleanArray(value.whatIsKnown);
+  const whatIsNotKnown = cleanArray(value.whatIsNotKnown);
+  const limitations = cleanArray(value.limitations);
+  const confidence = value.confidence;
+  if (!keyFacts || !whatIsKnown || !whatIsNotKnown || !limitations || !["high", "medium", "low"].includes(String(confidence))) {
+    return { reason: "malformed dossier fields" };
+  }
+  const chosenAngle = cleanText(value.chosenAngle);
+  if (!chosenAngle) return { reason: "missing chosen angle" };
+  return { dossier: { topic, chosenAngle, evidence, keyFacts, whatIsKnown, whatIsNotKnown, limitations, safeClaims, confidence: confidence as ResearchDossier["confidence"] } };
 }
 
 export function validateGeneratedClaims(text: string, dossier: ResearchDossier): GeneratedClaimsValidation {
@@ -22,8 +86,11 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
   // 2. Вырезаем нумерованные ссылки [1], [1-4]
   cleanText = cleanText.replace(/\[\d+(?:[-–,\s]+\d+)*\]/g, "");
 
-  // 3. Вырезаем ссылки в скобках с годом (Author, Year)
-  cleanText = cleanText.replace(/\([^)]*?(?:19|20)\d{2}[^)]*?\)/g, "");
+  // 3. Generated author/year citations are not allowed in generated copy.
+  // Reject rather than deleting a fragment and leaving an orphaned attribution.
+  if (/\([^)]*?(?:19|20)\d{2}[^)]*?\)/.test(cleanText)) {
+    return { valid: false, text: cleanText, reason: "Generated author/year citation detected" };
+  }
 
   // 4. Вырезаем строки GOST-списка
   cleanText = cleanText.replace(/^\s*\d+\.\s+.*$/gm, "");
@@ -253,7 +320,11 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
     "whatIsKnown": ["Известно"],
     "whatIsNotKnown": ["Неизвестно"],
     "limitations": ["Ограничения"],
-    "safeClaims": ["Выводы"],
+    "safeClaims": [{
+      "text": "Только осторожное утверждение, прямо следующее из источника",
+      "strength": "descriptive | suggestive | moderate | strong",
+      "evidenceRefs": ["PMID:12345678"]
+    }],
     "confidence": "high | medium | low"
   }
 }`;
@@ -288,22 +359,12 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
     const finalIsSufficient = isMathSufficient && parsed.interventionMatches;
 
     if (finalIsSufficient && parsed.dossier) {
-      // Очищаем текстовые поля Dossier от HTML
-      const cleanText = (str: string) => sanitizeHtml(str || "", { allowedTags: [], allowedAttributes: {} });
-      const cleanArray = (arr: string[]) => arr ? arr.map(cleanText) : [];
-
-      const dossier: ResearchDossier = {
-        topic,
-        chosenAngle: cleanText(parsed.dossier.chosenAngle),
-        keyFacts: cleanArray(parsed.dossier.keyFacts),
-        whatIsKnown: cleanArray(parsed.dossier.whatIsKnown),
-        whatIsNotKnown: cleanArray(parsed.dossier.whatIsNotKnown),
-        limitations: cleanArray(parsed.dossier.limitations),
-        safeClaims: cleanArray(parsed.dossier.safeClaims),
-        confidence: parsed.dossier.confidence,
-        evidence: articles,
-      };
-      return { isSufficient: true, dossier };
+      const parsedDossier = createDossierFromScienceGateResponse(topic, parsed.dossier, articles);
+      if (!parsedDossier.dossier) {
+        console.warn(`[ScienceGate] Rejected dossier: ${parsedDossier.reason}`);
+        return { isSufficient: false, reason: parsedDossier.reason };
+      }
+      return { isSufficient: true, dossier: parsedDossier.dossier };
     } else {
       return { isSufficient: false, reason: parsed.reason || "insufficient evidence" };
     }
@@ -317,11 +378,15 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
 async function generateScientificDraft(dossier: ResearchDossier): Promise<string> {
   const prompt = `Ты — медицинский аналитик. На основе утверждённого Dossier напиши сухой научный черновик статьи на русском языке.
 Тема: ${dossier.chosenAngle}
-Факты (используй строго): ${dossier.keyFacts.join("; ")}
-Что известно: ${dossier.whatIsKnown.join("; ")}
+РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ (используй только их, не добавляй новые медицинские факты):
+${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
+Дополнительный контекст: ${dossier.whatIsKnown.join("; ")}
+Что неизвестно: ${dossier.whatIsNotKnown.join("; ")}
 Ограничения: ${dossier.limitations.join("; ")}
+КАРТОЧКИ ИСТОЧНИКОВ:
+${evidenceCards(dossier.evidence)}
 
-ЗАПРЕЩЕНО добавлять воду, введение и заключение. Только пересказ фактов с указанием авторов и годов (если есть в фактах). Формат: обычный текст.`;
+Не добавляй авторов, годы, PMID, DOI или ссылки, которых нет в этих карточках. Не делай сильнее разрешённых утверждений. Формат: обычный текст без библиографии.`;
 
   const result = await chatCompletion({
     messages: [{ role: "user", content: prompt }],
@@ -338,8 +403,14 @@ async function humanizeDraft(draft: string, dossier: ResearchDossier): Promise<{
 НАУЧНЫЙ ЧЕРНОВИК:
  ${draft}
 
+РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ:
+${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
+ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}
+КАРТОЧКИ ИСТОЧНИКОВ:
+${evidenceCards(dossier.evidence)}
+
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
-1. Сохрани ВСЕ medical facts, цифры, дозировки, авторов и годы из черновика. ЗАПРЕЩЕНО их менять или убирать.
+1. Используй только утверждения из списка выше и не усиливай их. Не добавляй медицинские факты, цифры, дозировки, авторов, годы, PMID, DOI или ссылки, которых нет в dossier.
 2. ЗАПРЕЩЕНЫ клише ("Многие пациенты", "Узнайте больше", "В современном мире", "Снова в моде").
 3. ЗАПРЕЩЕН страдательный залог ("было доказано"). Используй активный залог ("Исследователи доказали").
 4. Тон: спокойный, экспертный, как у топовых медицинских каналов.
@@ -367,7 +438,7 @@ HTML-статья для сайта. Структура: <h2>Введение</h
 [TG_POST]
 Короткий пост для Telegram. СТРОГИЕ ПРАВИЛА:
 1. ЗАПРЕЩЕНЫ эмодзи и хэштеги.
-2. ОБЯЗАТЕЛЬНО укажи автора и год (например, "Bapat et al. (1998) доказали...").
+2. Не добавляй авторов, годы, PMID, DOI, библиографию или ссылки.
 3. Формат: 1 предложение (суть) + 2 предложения (что выяснили авторы) + 1 предложение (ограничение) + призыв: "Подробнее о механизмах действия — в полной статье на сайте:"
 [/TG_POST]`;
 
@@ -380,12 +451,13 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let rawText = result.choices[0]?.message?.content ?? "";
   // Вырезаем возможные Markdown code-blocks (```)
   rawText = rawText.replace(/```[a-z]*\\n?/g, '').replace(/```/g, '');
+  // Preserve HTML for [CONTENT]; a plain version is for logs only.
   const plainRawText = rawText.replace(/<[^>]+>/g, '');
   console.log("[Humanizer] GigaChat raw response:", plainRawText);
 
   const extract = (tag: string): string => {
     const regex = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[/${tag}\\]`, "i");
-    const match = plainRawText.match(regex);
+    const match = rawText.match(regex);
     return match ? match[1].trim() : "";
   };
 
@@ -399,7 +471,7 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   let telegramPost = extract("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim();
   if (!telegramPost) {
     // Fallback: ищем текст после [TG_POST] до конца или до следующего маркера
-    const tgFallback = plainRawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
+    const tgFallback = rawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
     telegramPost = tgFallback ? tgFallback[1].trim() : "";
   }
   // Если TG-пост пустой, используем описание статьи (лучше, чем заглушка)
@@ -462,6 +534,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     // STEP 3: Humanizer с валидацией и регенерацией
     let versions: { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string };
     let validation: GeneratedClaimsValidation;
+    let telegramValidation: GeneratedClaimsValidation;
     let humanizerAttempts = 0;
     const maxHumanizerAttempts = 3;
 
@@ -471,13 +544,14 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       console.timeEnd(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
 
       validation = validateGeneratedClaims(versions.siteContent || "", dossier);
-      if (!validation.valid) {
-        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${validation.reason}`);
+      telegramValidation = validateGeneratedClaims(versions.telegramPost || "", dossier);
+      if (!validation.valid || !telegramValidation.valid) {
+        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${validation.reason || telegramValidation.reason}`);
       }
       humanizerAttempts++;
-    } while (!validation.valid && humanizerAttempts < maxHumanizerAttempts);
+    } while ((!validation.valid || !telegramValidation.valid) && humanizerAttempts < maxHumanizerAttempts);
 
-    if (!validation.valid) {
+    if (!validation.valid || !telegramValidation.valid) {
       console.log("[Pipeline] Humanizer failed to produce valid output after max attempts. PIVOT.");
       let nextCluster = getRandomCluster();
       let safetyCounter = 0;
@@ -492,8 +566,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     }
 
     const siteContent = sanitizeContent(validation.text).trim();
-    const tgValidation = validateGeneratedClaims(versions.telegramPost || "", dossier);
-    const telegramPost = tgValidation.valid ? tgValidation.text : "";
+    const telegramPost = telegramValidation.text;
     const slug = slugify(versions.siteTitle || currentTopic);
     const now = new Date().toISOString().split("T")[0];
 
@@ -513,7 +586,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       status: "success",
       content: {
         post,
-        telegramPost: sanitizeHtml(versions.telegramPost || "", { allowedTags: [], allowedAttributes: {} }),
+        telegramPost: sanitizeHtml(telegramPost, { allowedTags: [], allowedAttributes: {} }),
         seo: { title: post.title, description: post.excerpt, keywords: post.keywords.join(", ") },
         dossier,
         sources: allArticles
