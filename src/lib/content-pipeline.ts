@@ -13,6 +13,58 @@ export interface GeneratedClaimsValidation {
 }
 
 const CLAIM_STRENGTHS: ClaimStrength[] = ["descriptive", "suggestive", "moderate", "strong"];
+const CLAIM_STRENGTH_RANK: Record<ClaimStrength, number> = {
+  descriptive: 0, suggestive: 1, moderate: 2, strong: 3,
+};
+
+/**
+ * The model may label evidence optimistically. This server-side ceiling keeps
+ * a weak/old or unclassified record from supporting a strong marketing claim.
+ */
+export function maximumClaimStrength(evidenceRefs: string[], evidence: EvidenceItem[]): ClaimStrength {
+  const refs = evidenceRefSet(evidence);
+  const cited = evidence.filter((item) => {
+    const ids = [item.pmid ? `PMID:${item.pmid}` : "", item.doi ? `DOI:${item.doi.toLowerCase()}` : ""];
+    return ids.some((id) => id && evidenceRefs.some((ref) =>
+      ref.toLowerCase().startsWith("doi:") ? id === `DOI:${ref.slice(4).toLowerCase()}` : id === ref
+    ));
+  });
+  if (cited.length === 0 || evidenceRefs.some((ref) => !refs.has(ref.toLowerCase().startsWith("doi:") ? `DOI:${ref.slice(4).toLowerCase()}` : ref))) {
+    return "descriptive";
+  }
+  const hasModernSynthesis = cited.some((item) =>
+    ["systematic_review", "meta_analysis", "guideline"].includes(item.sourceType || "") && publicationYear(item) >= 2015
+  );
+  if (hasModernSynthesis) return "moderate";
+  const hasModernRct = cited.some((item) => item.sourceType === "rct" && publicationYear(item) >= 2010);
+  return hasModernRct ? "suggestive" : "descriptive";
+}
+
+function publicationYear(item: EvidenceItem): number {
+  const match = item.pubDate.match(/(?:19|20)\d{2}/);
+  return match ? Number(match[0]) : 0;
+}
+
+/** Exclude records that cannot be responsibly used as clinical evidence. */
+export function filterEligibleEvidence(topic: string, articles: EvidenceItem[]): EvidenceItem[] {
+  const normalizedTopic = topic.toLowerCase();
+  const unrelatedRedFlags = ["poisoning", "intoxication", "toxicology"];
+  return articles.filter((item) => {
+    if (!item.abstract?.trim() || (!item.pmid && !item.doi)) return false;
+    const haystack = `${item.title} ${item.abstract}`.toLowerCase();
+    return !unrelatedRedFlags.some((word) => haystack.includes(word) && !normalizedTopic.includes(word));
+  });
+}
+
+export function evidenceUsedByClaims(dossier: ResearchDossier): EvidenceItem[] {
+  const usedRefs = new Set(dossier.safeClaims.flatMap((claim) => claim.evidenceRefs.map((ref) =>
+    ref.toLowerCase().startsWith("doi:") ? `DOI:${ref.slice(4).toLowerCase()}` : ref
+  )));
+  return dossier.evidence.filter((item) =>
+    (item.pmid && usedRefs.has(`PMID:${item.pmid}`)) ||
+    (item.doi && usedRefs.has(`DOI:${item.doi.toLowerCase()}`))
+  );
+}
 
 function evidenceRefSet(evidence: EvidenceItem[]): Set<string> {
   return new Set(evidence.flatMap((item) => [
@@ -61,7 +113,12 @@ export function createDossierFromScienceGateResponse(
         !Array.isArray(evidenceRefs) || evidenceRefs.length === 0 || !evidenceRefs.every((ref) => typeof ref === "string" && refs.has(ref.toLowerCase().startsWith("doi:") ? `DOI:${ref.slice(4).toLowerCase()}` : ref))) {
       return { reason: "safe claim has invalid evidence references" };
     }
-    safeClaims.push({ text, strength: strength as ClaimStrength, evidenceRefs: evidenceRefs.map(String) });
+    const normalizedRefs = evidenceRefs.map(String);
+    const maximumStrength = maximumClaimStrength(normalizedRefs, evidence);
+    if (CLAIM_STRENGTH_RANK[strength as ClaimStrength] > CLAIM_STRENGTH_RANK[maximumStrength]) {
+      return { reason: `safe claim strength exceeds evidence ceiling: ${maximumStrength}` };
+    }
+    safeClaims.push({ text, strength: strength as ClaimStrength, evidenceRefs: normalizedRefs });
   }
 
   const keyFacts = cleanArray(value.keyFacts);
@@ -123,9 +180,9 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
 
   // 7. Детекция усилителей доказательности (БЕЗ переписывания смысла)
   const forbiddenAmplifiers = [
-    "доказано", "доказана эффективность", "гарантирует",
-    "является эффективным методом", "проверенный метод",
-    "доказательно работает", "эффективность подтверждена"
+    "доказан", "доказана", "доказаны", "доказали", "доказанной",
+    "эффективн", "гарантиру", "лечит", "излеч", "нормализует",
+    "является эффективным методом", "проверенный метод", "доказательно работает"
   ];
   for (const amp of forbiddenAmplifiers) {
     if (cleanText.match(new RegExp(amp, "gi"))) {
@@ -334,7 +391,9 @@ ${evidenceCards(articles)}
     }],
     "confidence": "high | medium | low"
   } | null
-}`;
+}
+
+Ограничения силы: strong не используй. Для источников без явно указанного современного systematic review, meta-analysis или guideline используй только descriptive. Не называй эффект доказанным, эффективным, гарантированным или лечебным.`;
 
   try {
     const result = await chatCompletion({
@@ -508,7 +567,8 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
     const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
     const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
-    const allArticles = [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[];
+    const allArticles = filterEligibleEvidence(currentTopic, [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[]);
+    console.log(`[Pipeline] Eligible evidence: ${allArticles.length}`);
 
     if (allArticles.length === 0) {
       let nextCluster = getRandomCluster();
@@ -587,7 +647,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       slug,
       title: versions.siteTitle || currentTopic,
       excerpt: versions.siteExcerpt || `Профессиональный разбор: ${currentTopic}`,
-      content: siteContent + generateSourcesBlock(dossier.evidence),
+      content: siteContent + generateSourcesBlock(evidenceUsedByClaims(dossier)),
       keywords: currentCluster ? [currentCluster.primary] : [currentTopic],
       type: "research",
       publishedAt: now,
@@ -602,7 +662,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
         telegramPost: sanitizeHtml(telegramPost, { allowedTags: [], allowedAttributes: {} }),
         seo: { title: post.title, description: post.excerpt, keywords: post.keywords.join(", ") },
         dossier,
-        sources: allArticles
+        sources: evidenceUsedByClaims(dossier)
       }
     };
   }

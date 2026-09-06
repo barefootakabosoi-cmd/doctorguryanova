@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createDossierFromScienceGateResponse, generateArticle } from "../src/lib/content-pipeline";
+import { createDossierFromScienceGateResponse, filterEligibleEvidence, generateArticle, maximumClaimStrength, validateGeneratedClaims, evidenceUsedByClaims } from "../src/lib/content-pipeline";
 import { chatCompletion } from "../src/lib/gigachat";
 
 vi.mock("../src/lib/gigachat", () => ({
@@ -155,5 +155,55 @@ describe("Evidence Contract v5 boundary", () => {
       expect(result.content.telegramPost).toContain("Краткий осторожный вывод");
       expect(mockChat).toHaveBeenCalledTimes(4);
     }
+  });
+});
+
+
+describe("Source eligibility and claim strength", () => {
+  const oldStudy = {
+    title: "Small physiotherapy study", journal: "J", pubDate: "2008", abstract: "A small clinical study.",
+    url: "https://example.test/old", pmid: "11111111",
+  };
+  const modernReview = {
+    title: "Modern systematic review", journal: "J", pubDate: "2022", abstract: "Systematic review.",
+    url: "https://example.test/review", pmid: "22222222", sourceType: "systematic_review" as const,
+  };
+
+  it("drops an unrelated poisoning record and records without an abstract", () => {
+    const eligible = filterEligibleEvidence("вегето-сосудистая дистония", [
+      oldStudy,
+      { title: "Neurologic disorders in acute dichloroethane poisoning", journal: "J", pubDate: "1978", abstract: "Acute poisoning study.", url: "https://example.test/poison", pmid: "33333333" },
+      { title: "No abstract", journal: "J", pubDate: "2024", abstract: "", url: "https://example.test/empty", pmid: "44444444" },
+    ]);
+    expect(eligible).toEqual([oldStudy]);
+  });
+
+  it("rejects a strong claim supported only by an old unclassified study", () => {
+    expect(maximumClaimStrength(["PMID:11111111"], [oldStudy])).toBe("descriptive");
+    const result = createDossierFromScienceGateResponse("Topic", {
+      chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium",
+      safeClaims: [{ text: "Claim", strength: "strong", evidenceRefs: ["PMID:11111111"] }],
+    }, [oldStudy]);
+    expect(result.dossier).toBeUndefined();
+    expect(result.reason).toMatch(/strength/);
+  });
+
+  it("allows moderate but not strong claims with a modern systematic review", () => {
+    expect(maximumClaimStrength(["PMID:22222222"], [modernReview])).toBe("moderate");
+    const result = createDossierFromScienceGateResponse("Topic", {
+      chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium",
+      safeClaims: [{ text: "Careful claim", strength: "moderate", evidenceRefs: ["PMID:22222222"] }],
+    }, [modernReview]);
+    expect(result.dossier).toBeDefined();
+  });
+
+  it("rejects effectiveness language and only publishes sources used by claims", () => {
+    const dossier = {
+      topic: "Topic", chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "low" as const,
+      safeClaims: [{ text: "Careful claim", strength: "descriptive" as const, evidenceRefs: ["PMID:11111111"] }],
+      evidence: [oldStudy, modernReview],
+    };
+    expect(validateGeneratedClaims("<p>Метод обладает доказанной эффективностью.</p>", dossier).valid).toBe(false);
+    expect(evidenceUsedByClaims(dossier)).toEqual([oldStudy]);
   });
 });
