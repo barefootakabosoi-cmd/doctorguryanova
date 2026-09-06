@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createDossierFromScienceGateResponse, filterEligibleEvidence, generateArticle, maximumClaimStrength, validateGeneratedClaims, evidenceUsedByClaims } from "../src/lib/content-pipeline";
+import { createDossierFromScienceGateResponse, filterEligibleEvidence, generateArticle, maximumClaimStrength, validateGeneratedClaims, evidenceUsedByClaims, markdownToHtml } from "../src/lib/content-pipeline";
 import { chatCompletion } from "../src/lib/gigachat";
 
 vi.mock("../src/lib/gigachat", () => ({
@@ -241,5 +241,20 @@ describe("Humanizer repair loop", () => {
     const retryPrompt = mockChat.mock.calls[3][0].messages[0].content as string;
     expect(retryPrompt).toContain("ПРЕДЫДУЩАЯ ВЕРСИЯ БЫЛА ОТКЛОНЕНА");
     expect(retryPrompt).toContain("strong effectiveness claim");
+  });
+});
+
+
+describe("Markdown conversion", () => {
+  it("renders markdown emphasis once instead of wrapping every character", () => {
+    const html = markdownToHtml("## Введение\n\n**Важный вывод**");
+    expect(html).toContain("<h2>Введение</h2>");
+    expect(html).toContain("<strong>Важный вывод</strong>");
+    expect(html).not.toContain("<strong>В</strong><strong>а</strong>");
+  });
+
+  it("does not reinterpret already-valid HTML as markdown", () => {
+    const html = markdownToHtml("<h2>Введение</h2><p>Обычный текст.</p>");
+    expect(html).toBe("<h2>Введение</h2><p>Обычный текст.</p>");
   });
 });

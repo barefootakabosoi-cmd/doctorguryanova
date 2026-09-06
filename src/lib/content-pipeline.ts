@@ -279,7 +279,7 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
 
 
 // Конвертер Markdown -> HTML (для упрямого GigaChat)
-function markdownToHtml(md: string): string {
+export function markdownToHtml(md: string): string {
   if (!md) return "";
   let html = md;
 
@@ -296,7 +296,7 @@ function markdownToHtml(md: string): string {
   html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
 
   // Bold/Italic
-  html = html.replace(/\\*\\*(.+?)\\*\\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/__(.+?)__/g, "<strong>$1</strong>");
 
   // Списки
@@ -305,7 +305,7 @@ function markdownToHtml(md: string): string {
   const result: string[] = [];
   for (const line of lines) {
     if (line.match(/^[-*] /)) {
-      const liContent = line.replace(/^[-*] /, "").replace(/\\*\\*(.*?)\\*\\*/g, "<strong>$1</strong>");
+      const liContent = line.replace(/^[-*] /, "").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
       if (!inList) { result.push("<ul>"); inList = true; }
       result.push(`<li>${liContent}</li>`);
     } else {
