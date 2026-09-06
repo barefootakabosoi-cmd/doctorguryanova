@@ -197,6 +197,18 @@ describe("Source eligibility and claim strength", () => {
     expect(result.dossier).toBeDefined();
   });
 
+  it("rejects promotional effectiveness claims but permits neutral limitation language", () => {
+    const dossier = {
+      topic: "Topic", chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "low" as const,
+      safeClaims: [{ text: "Careful claim", strength: "descriptive" as const, evidenceRefs: ["PMID:11111111"] }],
+      evidence: [oldStudy],
+    };
+    expect(validateGeneratedClaims("<p>Это эффективный метод лечения.</p>", dossier).valid).toBe(false);
+    expect(validateGeneratedClaims("<p>Эффективность подтверждена.</p>", dossier).valid).toBe(false);
+    expect(validateGeneratedClaims("<p>Нужны исследования для оценки эффективности.</p>", dossier).valid).toBe(true);
+    expect(validateGeneratedClaims("<p>При неэффективности консервативной терапии врач пересматривает тактику.</p>", dossier).valid).toBe(true);
+  });
+
   it("rejects effectiveness language and only publishes sources used by claims", () => {
     const dossier = {
       topic: "Topic", chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "low" as const,

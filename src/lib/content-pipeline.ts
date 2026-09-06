@@ -178,15 +178,23 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
     }
   }
 
-  // 7. Детекция усилителей доказательности (БЕЗ переписывания смысла)
-  const forbiddenAmplifiers = [
-    "доказан", "доказана", "доказаны", "доказали", "доказанной",
-    "эффективн", "гарантиру", "лечит", "излеч", "нормализует",
-    "является эффективным методом", "проверенный метод", "доказательно работает"
+  // 7. Reject promotional or overconfident *claims*, not neutral discussion of
+  // effectiveness. For example, “оценка эффективности” and “при неэффективности
+  // терапии” are legitimate limitation/clinical-context phrases.
+  const forbiddenClaimPatterns: Array<[RegExp, string]> = [
+    [/доказан[а-яё]*/i, "доказан"],
+    [/доказали/i, "доказали"],
+    [/гарантиру[а-яё]*/i, "гарантиру"],
+    [/излеч[а-яё]*/i, "излеч"],
+    [/(?:эффективн[а-яё]*|результативн[а-яё]*)\s+(?:метод|способ|лечени[а-яё]*|терапи[а-яё]*|операци[а-яё]*|процедур[а-яё]*)/i, "strong effectiveness claim"],
+    [/(?:наиболее|сам[а-яё]*)\s+(?:эффективн[а-яё]*|результативн[а-яё]*)/i, "comparative effectiveness claim"],
+    [/(?:доказан[а-яё]*|подтвержд[а-яё]*)\s+(?:эффективност|польз|результат)[а-яё]*/i, "proven effectiveness"],
+    [/(?:эффективност|польз|результат)[а-яё]*\s+подтвержд[а-яё]*/i, "proven effectiveness"],
+    [/(?:лечит|вылечивает|нормализует)/i, "guaranteed clinical outcome"],
   ];
-  for (const amp of forbiddenAmplifiers) {
-    if (cleanText.match(new RegExp(amp, "gi"))) {
-      return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${amp}` };
+  for (const [pattern, label] of forbiddenClaimPatterns) {
+    if (pattern.test(cleanText)) {
+      return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${label}` };
     }
   }
 
@@ -452,13 +460,9 @@ async function generateScientificDraft(dossier: ResearchDossier): Promise<string
 Тема: ${dossier.chosenAngle}
 РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ (используй только их, не добавляй новые медицинские факты):
 ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
-Дополнительный контекст: ${dossier.whatIsKnown.join("; ")}
-Что неизвестно: ${dossier.whatIsNotKnown.join("; ")}
-Ограничения: ${dossier.limitations.join("; ")}
-КАРТОЧКИ ИСТОЧНИКОВ:
-${evidenceCards(dossier.evidence)}
+ОГРАНИЧЕНИЯ (их можно упомянуть только как ограничения): ${dossier.limitations.join("; ")}
 
-Не добавляй авторов, годы, PMID, DOI или ссылки, которых нет в этих карточках. Не делай сильнее разрешённых утверждений. Формат: обычный текст без библиографии.`;
+Не добавляй факты из общих знаний, даже если они кажутся очевидными: диагнозы, препараты, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры и сравнения. Не добавляй авторов, годы, PMID, DOI или ссылки. Не делай сильнее разрешённых утверждений. Формат: обычный текст без библиографии.`;
 
   const result = await chatCompletion({
     messages: [{ role: "user", content: prompt }],
@@ -478,16 +482,14 @@ async function humanizeDraft(draft: string, dossier: ResearchDossier): Promise<{
 РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ:
 ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
 ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}
-КАРТОЧКИ ИСТОЧНИКОВ:
-${evidenceCards(dossier.evidence)}
-
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
-1. Используй только утверждения из списка выше и не усиливай их. Не добавляй медицинские факты, цифры, дозировки, авторов, годы, PMID, DOI или ссылки, которых нет в dossier.
-2. ЗАПРЕЩЕНЫ клише ("Многие пациенты", "Узнайте больше", "В современном мире", "Снова в моде").
-3. ЗАПРЕЩЕН страдательный залог ("было доказано"). Используй активный залог ("Исследователи доказали").
-4. Тон: спокойный, экспертный, как у топовых медицинских каналов.
-5. Пиши ТОЛЬКО на чистом HTML (без Markdown).
-6. ЗАПРЕЩЕНО добавлять блоки "Литература", "Источники", "Ключевые слова". Система добавит их автоматически.
+1. Используй только утверждения из списка выше и не усиливай их. Черновик — лишь материал для редакторской переработки: игнорируй любой факт из него, которого нет в разрешённых утверждениях или ограничениях.
+2. Не добавляй факты из общих знаний: диагнозы, препараты, операции, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры, сравнения, авторов, годы, PMID, DOI и ссылки.
+3. Не пиши «доказано», «доказанная эффективность», «эффективный метод», «наиболее эффективный», «гарантирует», «лечит», «излечивает», «нормализует». Слово «эффективность» допустимо только в ограничительном контексте: «данных для оценки эффективности недостаточно» или «нужны исследования для оценки эффективности».
+4. ЗАПРЕЩЕНЫ клише ("Многие пациенты", "Узнайте больше", "В современном мире", "Снова в моде").
+5. Тон: спокойный, осторожный, без рекламных обещаний.
+6. Пиши ТОЛЬКО на чистом HTML (без Markdown).
+7. ЗАПРЕЩЕНО добавлять блоки "Литература", "Источники", "Ключевые слова". Система добавит их автоматически.
 
 Ответь СТРОГО в следующем формате (маркеры):
 
@@ -608,6 +610,8 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     let versions: { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string };
     let validation: GeneratedClaimsValidation;
     let telegramValidation: GeneratedClaimsValidation;
+    let titleValidation: GeneratedClaimsValidation;
+    let excerptValidation: GeneratedClaimsValidation;
     let humanizerAttempts = 0;
     const maxHumanizerAttempts = 3;
 
@@ -616,15 +620,17 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       versions = await humanizeDraft(draft, dossier);
       console.timeEnd(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
 
+      titleValidation = validateGeneratedClaims(versions.siteTitle || "", dossier);
+      excerptValidation = validateGeneratedClaims(versions.siteExcerpt || "", dossier);
       validation = validateGeneratedClaims(versions.siteContent || "", dossier);
       telegramValidation = validateGeneratedClaims(versions.telegramPost || "", dossier);
-      if (!validation.valid || !telegramValidation.valid) {
-        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${validation.reason || telegramValidation.reason}`);
+      if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
+        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${titleValidation.reason || excerptValidation.reason || validation.reason || telegramValidation.reason}`);
       }
       humanizerAttempts++;
-    } while ((!validation.valid || !telegramValidation.valid) && humanizerAttempts < maxHumanizerAttempts);
+    } while ((!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) && humanizerAttempts < maxHumanizerAttempts);
 
-    if (!validation.valid || !telegramValidation.valid) {
+    if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
       console.log("[Pipeline] Humanizer failed to produce valid output after max attempts. PIVOT.");
       let nextCluster = getRandomCluster();
       let safetyCounter = 0;
@@ -645,8 +651,8 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
 
     const post: BlogPost = {
       slug,
-      title: versions.siteTitle || currentTopic,
-      excerpt: versions.siteExcerpt || `Профессиональный разбор: ${currentTopic}`,
+      title: titleValidation.text || currentTopic,
+      excerpt: excerptValidation.text || `Профессиональный разбор: ${currentTopic}`,
       content: siteContent + generateSourcesBlock(evidenceUsedByClaims(dossier)),
       keywords: currentCluster ? [currentCluster.primary] : [currentTopic],
       type: "research",
