@@ -21,10 +21,11 @@ function evidenceRefSet(evidence: EvidenceItem[]): Set<string> {
   ].filter(Boolean)));
 }
 
-function evidenceCards(evidence: EvidenceItem[]): string {
+/** Stable, copyable source cards for every LLM stage. Claims may cite only IDs shown here. */
+export function evidenceCards(evidence: EvidenceItem[]): string {
   return evidence.map((item) => {
     const refs = [item.pmid ? `PMID:${item.pmid}` : "", item.doi ? `DOI:${item.doi}` : ""].filter(Boolean).join("; ");
-    return `- ${refs || "NO_STABLE_ID"}: ${item.title} (${item.journal}, ${item.pubDate}). ${item.abstract}`;
+    return `- ${refs || "NO_STABLE_ID"}: ${item.title} (${item.journal}, ${item.pubDate}). Abstract: ${item.abstract || "not available"}`;
   }).join("\n");
 }
 
@@ -302,12 +303,18 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
   if (articles.length === 0) return { isSufficient: false, reason: "no sources found" };
 
   const prompt = `Ты — строгий медицинский рецензент. Оцени источники для темы: "${topic}".
-Источники:
- ${articles.map((a, i) => `${i+1}. ${a.title} (${a.journal}, ${a.pubDate}). Abstract: ${a.abstract}`).join("\n\n")}
+Источники. У каждого источника в начале указаны его ЕДИНСТВЕННЫЕ допустимые ID:
+${evidenceCards(articles)}
+
+Правила оценки:
+- topicMatches=true, только если источники непосредственно относятся к теме, а не просто к соседнему симптому или методу.
+- Для каждого safeClaims.evidenceRefs копируй один или несколько ID ТОЧНО из списка источников выше. Не придумывай PMID или DOI.
+- Если доказательств недостаточно, topicMatches=false или невозможно создать хотя бы один claim с реальным ID, верни dossier: null.
+- Не используй поле isSufficient: сервер сам применит числовые критерии.
 
 Сформируй JSON БЕЗ КОММЕНТАРИЕВ:
 {
-  "interventionMatches": boolean,
+  "topicMatches": boolean,
   "relevantSources": number,
   "highQuality": number,
   "mediumQuality": number,
@@ -326,7 +333,7 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
       "evidenceRefs": ["PMID:12345678"]
     }],
     "confidence": "high | medium | low"
-  }
+  } | null
 }`;
 
   try {
@@ -352,11 +359,17 @@ async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promis
 
     const parsed = JSON.parse(rawText);
 
-    console.log(`[ScienceGate] topic: ${topic} | high: ${parsed.highQuality || 0} | med: ${parsed.mediumQuality || 0} | cases: ${parsed.clinicalCases || 0} | match: ${parsed.interventionMatches}`);
-
-    // Серверная математика
-    const isMathSufficient = (parsed.highQuality >= 1) || (parsed.mediumQuality >= 2 && parsed.clinicalCases === 0);
-    const finalIsSufficient = isMathSufficient && parsed.interventionMatches;
+    // Server-owned decision: never infer success from the model's prose reason.
+    const highQuality = Number(parsed.highQuality) || 0;
+    const mediumQuality = Number(parsed.mediumQuality) || 0;
+    const clinicalCases = Number(parsed.clinicalCases) || 0;
+    const topicMatches = parsed.topicMatches === true;
+    const isMathSufficient = highQuality >= 1 || (mediumQuality >= 2 && clinicalCases === 0);
+    const finalIsSufficient = isMathSufficient && topicMatches;
+    console.log("[ScienceGate] decision", {
+      topic, highQuality, mediumQuality, clinicalCases, topicMatches,
+      isMathSufficient, finalIsSufficient, hasDossier: Boolean(parsed.dossier),
+    });
 
     if (finalIsSufficient && parsed.dossier) {
       const parsedDossier = createDossierFromScienceGateResponse(topic, parsed.dossier, articles);

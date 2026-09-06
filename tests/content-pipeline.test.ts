@@ -37,7 +37,7 @@ describe("Pipeline Evidence-Locked v4", () => {
 
   const mockScienceGatePass = (topic: string) => ({
     choices: [{ message: { content: JSON.stringify({
-      interventionMatches: true,
+      topicMatches: true,
       relevantSources: 3,
       highQuality: 1,
       mediumQuality: 0,
@@ -107,7 +107,7 @@ describe("Pipeline Evidence-Locked v4", () => {
 describe("Evidence Contract v5 boundary", () => {
   const mockScienceGatePass = (topic: string) => ({
     choices: [{ message: { content: JSON.stringify({
-      interventionMatches: true, relevantSources: 1, highQuality: 1, mediumQuality: 0, clinicalCases: 0,
+      topicMatches: true, relevantSources: 1, highQuality: 1, mediumQuality: 0, clinicalCases: 0,
       isSufficient: true, reason: "Relevant", dossier: {
         chosenAngle: topic, keyFacts: ["Fact"], whatIsKnown: ["Known"], whatIsNotKnown: ["Unknown"], limitations: ["Limit"],
         safeClaims: [{ text: "Claim", strength: "descriptive", evidenceRefs: ["PMID:123"] }], confidence: "high",
