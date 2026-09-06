@@ -178,14 +178,14 @@ describe("Source eligibility and claim strength", () => {
     expect(eligible).toEqual([oldStudy]);
   });
 
-  it("rejects a strong claim supported only by an old unclassified study", () => {
+  it("caps an over-labelled claim to the server evidence ceiling instead of discarding valid evidence", () => {
     expect(maximumClaimStrength(["PMID:11111111"], [oldStudy])).toBe("descriptive");
     const result = createDossierFromScienceGateResponse("Topic", {
       chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium",
       safeClaims: [{ text: "Claim", strength: "strong", evidenceRefs: ["PMID:11111111"] }],
     }, [oldStudy]);
-    expect(result.dossier).toBeUndefined();
-    expect(result.reason).toMatch(/strength/);
+    expect(result.dossier).toBeDefined();
+    expect(result.dossier?.safeClaims[0].strength).toBe("descriptive");
   });
 
   it("allows moderate but not strong claims with a modern systematic review", () => {
@@ -217,5 +217,29 @@ describe("Source eligibility and claim strength", () => {
     };
     expect(validateGeneratedClaims("<p>Метод обладает доказанной эффективностью.</p>", dossier).valid).toBe(false);
     expect(evidenceUsedByClaims(dossier)).toEqual([oldStudy]);
+  });
+});
+
+
+describe("Humanizer repair loop", () => {
+  it("feeds the concrete validator rejection into the next regeneration", async () => {
+    mockChat.mockReset();
+    const science = { choices: [{ message: { content: JSON.stringify({
+      topicMatches: true, highQuality: 1, mediumQuality: 0, clinicalCases: 0, dossier: {
+        chosenAngle: "Topic", keyFacts: ["Fact"], whatIsKnown: ["Known"], whatIsNotKnown: ["Unknown"], limitations: ["Limit"],
+        safeClaims: [{ text: "Careful claim", strength: "descriptive", evidenceRefs: ["PMID:123"] }], confidence: "low"
+      }
+    }) } }] };
+    mockChat.mockResolvedValueOnce(science);
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "Draft" } }] });
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]<p>Это эффективный метод лечения.</p>[/CONTENT]" } }] });
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]<p>Осторожный вывод.</p>[/CONTENT]" } }] });
+
+    const result = await generateArticle("Topic");
+    expect(result.status).toBe("success");
+    expect(mockChat).toHaveBeenCalledTimes(4);
+    const retryPrompt = mockChat.mock.calls[3][0].messages[0].content as string;
+    expect(retryPrompt).toContain("ПРЕДЫДУЩАЯ ВЕРСИЯ БЫЛА ОТКЛОНЕНА");
+    expect(retryPrompt).toContain("strong effectiveness claim");
   });
 });

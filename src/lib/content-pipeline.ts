@@ -115,10 +115,18 @@ export function createDossierFromScienceGateResponse(
     }
     const normalizedRefs = evidenceRefs.map(String);
     const maximumStrength = maximumClaimStrength(normalizedRefs, evidence);
-    if (CLAIM_STRENGTH_RANK[strength as ClaimStrength] > CLAIM_STRENGTH_RANK[maximumStrength]) {
-      return { reason: `safe claim strength exceeds evidence ceiling: ${maximumStrength}` };
+    // The model often over-labels a claim's confidence. This is not a reason to
+    // discard an otherwise source-bound dossier: retain the claim, but make the
+    // server-owned ceiling authoritative. The generated text still must pass the
+    // downstream anti-amplification validation.
+    const requestedStrength = strength as ClaimStrength;
+    const effectiveStrength = CLAIM_STRENGTH_RANK[requestedStrength] > CLAIM_STRENGTH_RANK[maximumStrength]
+      ? maximumStrength
+      : requestedStrength;
+    if (effectiveStrength !== requestedStrength) {
+      console.warn(`[ScienceGate] Claim strength capped: ${requestedStrength} -> ${effectiveStrength}`);
     }
-    safeClaims.push({ text, strength: strength as ClaimStrength, evidenceRefs: normalizedRefs });
+    safeClaims.push({ text, strength: effectiveStrength, evidenceRefs: normalizedRefs });
   }
 
   const keyFacts = cleanArray(value.keyFacts);
@@ -473,7 +481,14 @@ ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.
 }
 
 // STEP 3: HUMANIZER (Живой язык + разные версии)
-async function humanizeDraft(draft: string, dossier: ResearchDossier): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string }> {
+async function humanizeDraft(
+  draft: string,
+  dossier: ResearchDossier,
+  previousFailure?: string
+): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string }> {
+  const correction = previousFailure
+    ? `\nПРЕДЫДУЩАЯ ВЕРСИЯ БЫЛА ОТКЛОНЕНА: ${previousFailure}. Исправь именно это; не повторяй запрещённую формулировку.\n`
+    : "";
   const prompt = `Ты — медицинский редактор. Твоя задача — переписать сухой научный черновик в живую, экспертную статью для сайта и Telegram.
 
 НАУЧНЫЙ ЧЕРНОВИК:
@@ -481,7 +496,7 @@ async function humanizeDraft(draft: string, dossier: ResearchDossier): Promise<{
 
 РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ:
 ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
-ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}
+ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}${correction}
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
 1. Используй только утверждения из списка выше и не усиливай их. Черновик — лишь материал для редакторской переработки: игнорируй любой факт из него, которого нет в разрешённых утверждениях или ограничениях.
 2. Не добавляй факты из общих знаний: диагнозы, препараты, операции, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры, сравнения, авторов, годы, PMID, DOI и ссылки.
@@ -613,11 +628,12 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     let titleValidation: GeneratedClaimsValidation;
     let excerptValidation: GeneratedClaimsValidation;
     let humanizerAttempts = 0;
+    let previousHumanizerFailure: string | undefined;
     const maxHumanizerAttempts = 3;
 
     do {
       console.time(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
-      versions = await humanizeDraft(draft, dossier);
+      versions = await humanizeDraft(draft, dossier, previousHumanizerFailure);
       console.timeEnd(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
 
       titleValidation = validateGeneratedClaims(versions.siteTitle || "", dossier);
@@ -625,7 +641,8 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       validation = validateGeneratedClaims(versions.siteContent || "", dossier);
       telegramValidation = validateGeneratedClaims(versions.telegramPost || "", dossier);
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
-        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${titleValidation.reason || excerptValidation.reason || validation.reason || telegramValidation.reason}`);
+        previousHumanizerFailure = titleValidation.reason || excerptValidation.reason || validation.reason || telegramValidation.reason;
+        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${previousHumanizerFailure}`);
       }
       humanizerAttempts++;
     } while ((!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) && humanizerAttempts < maxHumanizerAttempts);
