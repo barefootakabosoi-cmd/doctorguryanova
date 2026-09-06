@@ -152,6 +152,17 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
   // 2. Вырезаем нумерованные ссылки [1], [1-4]
   cleanText = cleanText.replace(/\[\d+(?:[-–,\s]+\d+)*\]/g, "");
 
+  // Internal evidence labels are instructions for the model, never public copy.
+  // Do not silently remove them: regenerate a reader-facing version instead.
+  if (/\[(?:descriptive|suggestive|moderate|strong)\s*;\s*(?:PMID|DOI):[^\]]+\]/i.test(cleanText)) {
+    return { valid: false, text: cleanText, reason: "Internal evidence marker leaked into public copy" };
+  }
+
+  // Humanizer is required to return HTML, not residual Markdown.
+  if (/(?:^|\s)#{1,3}\s|\*\*[^*]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*)/.test(cleanText)) {
+    return { valid: false, text: cleanText, reason: "Markdown leaked into public copy" };
+  }
+
   // 3. Generated author/year citations are not allowed in generated copy.
   // Reject rather than deleting a fragment and leaving an orphaned attribution.
   if (/\([^)]*?(?:19|20)\d{2}[^)]*?\)/.test(cleanText)) {
@@ -287,8 +298,15 @@ export function markdownToHtml(md: string): string {
   if (html.includes("<p>") && (html.includes("##") || html.includes("- "))) {
     html = html.replace(/<p>([\s\S]*?)<\/p>/gi, "$1");
   }
-  // Если уже чистый HTML (без Markdown) — возвращаем как есть
-  if (!html.includes("##") && !html.includes("- ") && !html.includes("**")) return html;
+  // Если уже чистый HTML (без Markdown) — возвращаем как есть.
+  // A bare text line after a heading is not well-formed article HTML and is
+  // normalized below into a paragraph.
+  const hasMarkdown = /(^|\n)(?:#{1,3}\s|[-*]\s)|\*\*[^*]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*)/.test(html);
+  const hasBareLine = html.split(/\n/).some(line => {
+    const value = line.trim();
+    return Boolean(value) && !value.startsWith("<") && !value.endsWith(">");
+  });
+  if (!hasMarkdown && !hasBareLine) return html;
 
   // Заголовки
   html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
@@ -298,9 +316,11 @@ export function markdownToHtml(md: string): string {
   // Bold/Italic
   html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/__(.+?)__/g, "<strong>$1</strong>");
+  html = html.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "<em>$1</em>");
+  html = html.replace(/(?<!_)_([^_\n]+?)_(?!_)/g, "<em>$1</em>");
 
   // Списки
-  const lines = html.split("\\n");
+  const lines = html.split("\n");
   let inList = false;
   const result: string[] = [];
   for (const line of lines) {
@@ -314,16 +334,21 @@ export function markdownToHtml(md: string): string {
     }
   }
   if (inList) result.push("</ul>");
-  html = result.join("\\n");
+  html = result.join("\n");
 
-  // Параграфы
-  const paragraphs = html.split(/\\n\\n+/);
+  // Paragraphs. Keep structural blocks intact but never leave reader-facing
+  // text as an orphan outside <p>.
+  const paragraphs = html.split(/\n\n+/);
   html = paragraphs.map(p => {
     const trimmed = p.trim();
     if (!trimmed) return "";
-    if (trimmed.startsWith("<h") || trimmed.startsWith("<ul>") || trimmed.startsWith("<li>")) return trimmed;
-    return `<p>${trimmed.replace(/\\n/g, "<br>")}</p>`;
-  }).filter(Boolean).join("\\n");
+    const headingWithText = trimmed.match(/^(<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>)[\n\s]*([\s\S]+)$/i);
+    if (headingWithText && headingWithText[2].trim() && !headingWithText[2].trim().startsWith("<")) {
+      return `${headingWithText[1]}<p>${headingWithText[2].trim().replace(/\n/g, "<br>")}</p>`;
+    }
+    if (trimmed.startsWith("<h") || trimmed.startsWith("<ul>") || trimmed.startsWith("<ol>") || trimmed.startsWith("<li>")) return trimmed;
+    return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
+  }).filter(Boolean).join("\n");
 
   return html;
 }
@@ -503,8 +528,9 @@ ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.
 3. Не пиши «доказано», «доказанная эффективность», «эффективный метод», «наиболее эффективный», «гарантирует», «лечит», «излечивает», «нормализует». Слово «эффективность» допустимо только в ограничительном контексте: «данных для оценки эффективности недостаточно» или «нужны исследования для оценки эффективности».
 4. ЗАПРЕЩЕНЫ клише ("Многие пациенты", "Узнайте больше", "В современном мире", "Снова в моде").
 5. Тон: спокойный, осторожный, без рекламных обещаний.
-6. Пиши ТОЛЬКО на чистом HTML (без Markdown).
+6. Пиши ТОЛЬКО на чистом HTML (без Markdown): каждый абзац заключай в <p>, заголовки — в <h2>. Не используй *, **, [descriptive; PMID:…] или любые служебные метки.
 7. ЗАПРЕЩЕНО добавлять блоки "Литература", "Источники", "Ключевые слова". Система добавит их автоматически.
+8. Для descriptive-утверждений не используй «широко применяется», «рекомендуется», «снижает риск», «улучшает» или описание механизма. Передавай только осторожный факт из разрешённого утверждения и его ограничения.
 
 Ответь СТРОГО в следующем формате (маркеры):
 

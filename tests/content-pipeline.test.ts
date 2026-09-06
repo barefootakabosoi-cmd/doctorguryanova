@@ -258,3 +258,22 @@ describe("Markdown conversion", () => {
     expect(html).toBe("<h2>Введение</h2><p>Обычный текст.</p>");
   });
 });
+
+describe("Public-copy contract", () => {
+  const dossier = {
+    topic: "Topic", chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "low" as const,
+    safeClaims: [{ text: "Careful claim", strength: "descriptive" as const, evidenceRefs: ["PMID:11111111"] }],
+    evidence: [{ title: "Study", journal: "J", pubDate: "2024", abstract: "A", url: "https://example.test", pmid: "11111111" }],
+  };
+
+  it("rejects internal evidence labels and residual markdown in public output", () => {
+    expect(validateGeneratedClaims("<p>[descriptive; PMID:11111111] Текст.</p>", dossier).valid).toBe(false);
+    expect(validateGeneratedClaims("<p>*Hirudo medicinalis*</p>", dossier).valid).toBe(false);
+  });
+
+  it("renders italics and wraps bare text following a heading", () => {
+    const html = markdownToHtml("<h2>Введение</h2>\nТекст о *Hirudo medicinalis*.");
+    expect(html).toContain("<h2>Введение</h2>");
+    expect(html).toContain("<p>Текст о <em>Hirudo medicinalis</em>.</p>");
+  });
+});
