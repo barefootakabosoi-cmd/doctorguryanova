@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createDossierFromScienceGateResponse, filterEligibleEvidence, generateArticle, maximumClaimStrength, validateGeneratedClaims, evidenceUsedByClaims, markdownToHtml } from "../src/lib/content-pipeline";
+import { createDossierFromScienceGateResponse, filterEligibleEvidence, filterEvidenceForAutomaticPublication, generateArticle, maximumClaimStrength, validateGeneratedClaims, evidenceUsedByClaims, markdownToHtml } from "../src/lib/content-pipeline";
 import { chatCompletion } from "../src/lib/gigachat";
 
 vi.mock("../src/lib/gigachat", () => ({
@@ -173,6 +173,23 @@ describe("Source eligibility and claim strength", () => {
       { title: "No abstract", journal: "J", pubDate: "2024", abstract: "", url: "https://example.test/empty", pmid: "44444444" },
     ]);
     expect(eligible).toEqual([oldStudy]);
+  });
+
+  it("excludes clinical cases, author-branded methods, and unsupported products before the Science Gate", () => {
+    const independentReview = {
+      title: "Systematic review of conservative care for neck pain", journal: "J", pubDate: "2023",
+      abstract: "A systematic review of independent trials.", url: "https://example.test/review", pmid: "55555555", sourceType: "systematic_review" as const,
+    };
+    const rejected = [
+      { title: "Clinical case: cervical pain", journal: "J", pubDate: "2024", abstract: "Single clinical case.", url: "https://example.test/case", pmid: "66666666", sourceType: "clinical_case" as const },
+      { title: "Author's original method for cervical osteochondrosis", journal: "J", pubDate: "2024", abstract: "An author's original method lowered blood pressure.", url: "https://example.test/method", pmid: "77777777" },
+      { title: "Bioregulatory drugs for cervical pain", journal: "J", pubDate: "2025", abstract: "Traumeel S and Zeel T in one patient.", url: "https://example.test/product", doi: "10.1/product" },
+      oldStudy,
+    ];
+
+    expect(filterEligibleEvidence("остеохондроз шейного отдела", rejected)).toEqual([oldStudy]);
+    expect(filterEvidenceForAutomaticPublication("остеохондроз шейного отдела", [...rejected, independentReview])).toEqual([independentReview]);
+    expect(filterEvidenceForAutomaticPublication("остеохондроз шейного отдела", rejected)).toEqual([]);
   });
 
   it("caps an over-labelled claim to the server evidence ceiling instead of discarding valid evidence", () => {

@@ -45,6 +45,27 @@ function publicationYear(item: EvidenceItem): number {
   return match ? Number(match[0]) : 0;
 }
 
+/**
+ * Records that are not suitable inputs for an automatically generated clinical
+ * article. This is deliberately server-owned: an LLM must not promote a case
+ * report, an author-branded technique, or a product-marketing paper to a
+ * "safe claim" merely by assigning it a flattering quality label.
+ */
+const CLINICAL_CASE_PATTERN = /\b(?:case report|case study|clinical case|случа[йея]|клиническ[а-я]* случа[йя])\b/i;
+const UNSUPPORTED_PRODUCT_PATTERN = /\b(?:traumeel|zeel\s*t|биорегулятор\w*|homeopath\w*|гомеопат\w*)\b/i;
+const AUTHOR_METHOD_PATTERN = /\b(?:author['’]?s? (?:original )?method|original method|авторск(?:ая|ий) методик[а-я]*)\b/i;
+
+export function isTrustedClinicalEvidence(item: EvidenceItem): boolean {
+  const type = item.sourceType || "";
+  if (["guideline", "systematic_review", "meta_analysis", "rct"].includes(type)) return true;
+
+  // PubMed/Crossref adapters do not always expose publication type. Infer only
+  // conservative, bibliographic labels from the title; never infer an RCT from
+  // results in an abstract.
+  const title = item.title.toLowerCase();
+  return /\b(?:clinical practice guideline|practice guideline|guidance paper|consensus statement|systematic review|meta[ -]?analysis)\b/i.test(title);
+}
+
 /** Exclude records that cannot be responsibly used as clinical evidence. */
 export function filterEligibleEvidence(topic: string, articles: EvidenceItem[]): EvidenceItem[] {
   const normalizedTopic = topic.toLowerCase();
@@ -52,8 +73,20 @@ export function filterEligibleEvidence(topic: string, articles: EvidenceItem[]):
   return articles.filter((item) => {
     if (!item.abstract?.trim() || (!item.pmid && !item.doi)) return false;
     const haystack = `${item.title} ${item.abstract}`.toLowerCase();
-    return !unrelatedRedFlags.some((word) => haystack.includes(word) && !normalizedTopic.includes(word));
+    if (unrelatedRedFlags.some((word) => haystack.includes(word) && !normalizedTopic.includes(word))) return false;
+    if (item.sourceType === "clinical_case" || CLINICAL_CASE_PATTERN.test(item.title)) return false;
+    if (UNSUPPORTED_PRODUCT_PATTERN.test(haystack) || AUTHOR_METHOD_PATTERN.test(haystack)) return false;
+    return true;
   });
+}
+
+/**
+ * An automatic medical publication needs an independent evidence anchor. Weak
+ * records may help a human researcher, but are not passed to the Science Gate
+ * and therefore can never become public claims or fallback bibliography.
+ */
+export function filterEvidenceForAutomaticPublication(topic: string, articles: EvidenceItem[]): EvidenceItem[] {
+  return filterEligibleEvidence(topic, articles).filter(isTrustedClinicalEvidence);
 }
 
 export function evidenceUsedByClaims(dossier: ResearchDossier): EvidenceItem[] {
@@ -398,7 +431,8 @@ export type GenerationResult =
 
 // SCIENCE GATE
 async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promise<{ isSufficient: boolean; dossier?: ResearchDossier; reason?: string }> {
-  if (articles.length === 0) return { isSufficient: false, reason: "no sources found" };
+  if (articles.length === 0) return { isSufficient: false, reason: "no trusted clinical evidence found" };
+  if (!articles.some(isTrustedClinicalEvidence)) return { isSufficient: false, reason: "missing guideline, synthesis, or RCT evidence anchor" };
 
   const prompt = `Ты — строгий медицинский рецензент. Оцени источники для темы: "${topic}".
 Источники. У каждого источника в начале указаны его ЕДИНСТВЕННЫЕ допустимые ID:
@@ -407,6 +441,7 @@ ${evidenceCards(articles)}
 Правила оценки:
 - topicMatches=true, только если источники непосредственно относятся к теме, а не просто к соседнему симптому или методу.
 - Для каждого safeClaims.evidenceRefs копируй один или несколько ID ТОЧНО из списка источников выше. Не придумывай PMID или DOI.
+- В этот список уже попали только независимые guideline, systematic review, meta-analysis или RCT. Не повышай силу утверждения сверх источника.
 - Если доказательств недостаточно, topicMatches=false или невозможно создать хотя бы один claim с реальным ID, верни dossier: null.
 - Не используй поле isSufficient: сервер сам применит числовые критерии.
 
@@ -605,8 +640,10 @@ HTML-статья для сайта. Структура: <h2>Введение</h
  * automatically appended bibliography remains available for clinician review.
  */
 function conservativeFallback(dossier: ResearchDossier): { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string } {
-  const topic = sanitizeHtml(dossier.chosenAngle || dossier.topic, { allowedTags: [], allowedAttributes: {} }).trim();
-  const title = `Обзор публикаций: ${topic}`.slice(0, 120);
+  // Never reuse an LLM-selected angle in the fallback: it may contain an
+  // unsupported effectiveness promise even when the source dossier is sound.
+  const topic = sanitizeHtml(dossier.topic, { allowedTags: [], allowedAttributes: {} }).trim();
+  const title = `Обзор источников по теме: ${topic}`.slice(0, 120);
   const excerpt = "Краткий обзор доступных публикаций по теме с указанием ограничений имеющихся данных.";
   const content = [
     "<h2>О чём этот обзор</h2>",
@@ -633,8 +670,8 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
     const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
     const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
-    const allArticles = filterEligibleEvidence(currentTopic, [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[]);
-    console.log(`[Pipeline] Eligible evidence: ${allArticles.length}`);
+    const allArticles = filterEvidenceForAutomaticPublication(currentTopic, [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[]);
+    console.log(`[Pipeline] Trusted evidence eligible for publication: ${allArticles.length}`);
 
     if (allArticles.length === 0) {
       let nextCluster = getRandomCluster();
