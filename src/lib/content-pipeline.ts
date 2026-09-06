@@ -597,6 +597,29 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
 
+/**
+ * The LLM may repeatedly use promotional wording even after a precise retry
+ * instruction. Do not discard an evidence-approved topic solely because of
+ * that editorial failure: fall back to a deliberately conservative,
+ * source-backed shell. It makes no treatment or effectiveness claim; the
+ * automatically appended bibliography remains available for clinician review.
+ */
+function conservativeFallback(dossier: ResearchDossier): { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string } {
+  const topic = sanitizeHtml(dossier.chosenAngle || dossier.topic, { allowedTags: [], allowedAttributes: {} }).trim();
+  const title = `Обзор публикаций: ${topic}`.slice(0, 120);
+  const excerpt = "Краткий обзор доступных публикаций по теме с указанием ограничений имеющихся данных.";
+  const content = [
+    "<h2>О чём этот обзор</h2>",
+    `<p>В материале собраны публикации по теме «${topic}». Перечень использованных источников приведён в конце страницы.</p>`,
+    "<h2>Как интерпретировать данные</h2>",
+    "<p>Результаты отдельных исследований и обзоров не заменяют очную оценку врача. Применимость данных зависит от клинической ситуации, сопутствующих состояний и целей обследования или лечения.</p>",
+    "<h2>Ограничения</h2>",
+    "<p>Для практических решений важны дизайн исследований, их актуальность и качество доступных данных. При необходимости тактику обсуждают со специалистом.</p>"
+  ].join("\n");
+  const telegramPost = "Подготовлен обзор доступных публикаций по теме. В статье указаны источники и ограничения имеющихся данных; решение о тактике принимают после консультации со специалистом.";
+  return { siteTitle: title, siteExcerpt: excerpt, siteContent: content, telegramTitle: title, telegramPost };
+}
+
 // MAIN PIPELINE
 export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GenerationResult> {
   const maxAttempts = 3;
@@ -674,17 +697,27 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     } while ((!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) && humanizerAttempts < maxHumanizerAttempts);
 
     if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
-      console.log("[Pipeline] Humanizer failed to produce valid output after max attempts. PIVOT.");
-      let nextCluster = getRandomCluster();
-      let safetyCounter = 0;
-      while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
-        nextCluster = getRandomCluster();
-        safetyCounter++;
+      console.warn("[Pipeline] Humanizer failed after max attempts; using conservative evidence-only fallback.");
+      versions = conservativeFallback(dossier);
+      titleValidation = validateGeneratedClaims(versions.siteTitle, dossier);
+      excerptValidation = validateGeneratedClaims(versions.siteExcerpt, dossier);
+      validation = validateGeneratedClaims(versions.siteContent, dossier);
+      telegramValidation = validateGeneratedClaims(versions.telegramPost, dossier);
+      // The fallback is deterministic. Keep a defensive guard in case its text
+      // is changed in the future without matching validator updates.
+      if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
+        console.error("[Pipeline] Conservative fallback failed validation; PIVOT.");
+        let nextCluster = getRandomCluster();
+        let safetyCounter = 0;
+        while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
+          nextCluster = getRandomCluster();
+          safetyCounter++;
+        }
+        currentCluster = nextCluster;
+        currentTopic = currentCluster.primary;
+        attemptedTopics.add(currentTopic);
+        continue;
       }
-      currentCluster = nextCluster;
-      currentTopic = currentCluster.primary;
-      attemptedTopics.add(currentTopic);
-      continue;
     }
 
     const siteContent = sanitizeContent(validation.text).trim();

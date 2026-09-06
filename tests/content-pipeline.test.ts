@@ -76,7 +76,7 @@ describe("Pipeline Evidence-Locked v4", () => {
     expect(mockChat).toHaveBeenCalledTimes(4);
   });
 
-  it("Test 2: FAIL x3 -> PIVOT -> PASS", async () => {
+  it("Test 2: FAIL x3 -> conservative fallback", async () => {
     mockChat.mockReset();
     // Topic 1
     mockChat.mockResolvedValueOnce(mockScienceGatePass("Test Topic 1"));
@@ -85,11 +85,6 @@ describe("Pipeline Evidence-Locked v4", () => {
     mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это доказано.</p>"));
     mockChat.mockResolvedValueOnce(mockHumanizer("<p>Гарантирует выздоровление.</p>"));
 
-    // Topic 2 (PIVOT)
-    mockChat.mockResolvedValueOnce(mockScienceGatePass("New Topic"));
-    mockChat.mockResolvedValueOnce(mockDraft("Draft 2"));
-    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это безопасно.</p>"));
-
     const result = await generateArticle("Initial Topic");
 
     expect(result.status).toBe("success");
@@ -97,9 +92,11 @@ describe("Pipeline Evidence-Locked v4", () => {
       expect(result.content.post.content).not.toContain("доказано");
       expect(result.content.post.content).not.toContain("подтверждена");
       expect(result.content.post.content).not.toContain("Гарантирует");
-      expect(result.content.post.content).toContain("безопасно");
+      expect(result.content.post.content).toContain("О чём этот обзор");
+      expect(result.content.post.content).toContain("Как интерпретировать данные");
+      expect(result.content.post.content).not.toContain("безопасно");
     }
-    expect(mockChat).toHaveBeenCalledTimes(8);
+    expect(mockChat).toHaveBeenCalledTimes(5);
   });
 });
 
