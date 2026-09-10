@@ -34,16 +34,18 @@ export function maximumClaimStrength(evidenceRefs: string[], evidence: EvidenceI
   }
   // Crossref records and some PubMed records carry no structured type, but a
   // conservative bibliographic label in the title is still a structural fact.
-  // Reuse the exact inference trusted by the eligibility filter.
-  const hasModernSynthesis = cited.some((item) =>
-    ["systematic_review", "meta_analysis", "guideline"].includes(item.sourceType || "") &&
-    publicationYear(item) >= 2015
-  ) || cited.some((item) =>
-    !item.sourceType && isTrustedClinicalEvidence(item) && publicationYear(item) >= 2015
-  );
-  if (hasModernSynthesis) return "moderate";
-  const hasModernRct = cited.some((item) => item.sourceType === "rct" && publicationYear(item) >= 2010);
-  return hasModernRct ? "suggestive" : "descriptive";
+  // Reuse the exact inference trusted by the eligibility filter, keeping the
+  // synthesis-vs-trial distinction: a synthesis anchors moderate claims, a
+  // single trial only suggestive ones.
+  const isSynthesis = (item: EvidenceItem) =>
+    ["systematic_review", "meta_analysis", "guideline"].includes(item.sourceType || "") ||
+    (!item.sourceType && titleSays(item, SYNTHESIS_TITLE_PATTERN));
+  const isTrial = (item: EvidenceItem) =>
+    item.sourceType === "rct" ||
+    (!item.sourceType && titleSays(item, RCT_TITLE_PATTERN));
+  if (cited.some((item) => isSynthesis(item) && publicationYear(item) >= 2015)) return "moderate";
+  if (cited.some((item) => isTrial(item) && publicationYear(item) >= 2010)) return "suggestive";
+  return "descriptive";
 }
 
 function publicationYear(item: EvidenceItem): number {
@@ -61,15 +63,24 @@ const CLINICAL_CASE_PATTERN = /\b(?:case report|case study|clinical case|слу�
 const UNSUPPORTED_PRODUCT_PATTERN = /\b(?:traumeel|zeel\s*t|биорегулятор\w*|homeopath\w*|гомеопат\w*)\b/i;
 const AUTHOR_METHOD_PATTERN = /\b(?:author['’]?s? (?:original )?method|original method|авторск(?:ая|ий) методик[а-я]*)\b/i;
 
+const SYNTHESIS_TITLE_PATTERN = /\b(?:clinical practice guideline|practice guideline|guidance paper|consensus statement|systematic review|meta[ -]?analysis)\b/i;
+// Conservative bibliographic label: "randomized-controlled study" in a title is
+// a structural fact about the design; wording inside an abstract is not.
+const RCT_TITLE_PATTERN = /\brandomi[sz]ed[- ](?:controlled[- ])?(?:clinical[- ])?(?:trial|study)\b|\brandomi[sz]ed\s+controlled\s+trial\b/i;
+
+function titleSays(item: EvidenceItem, pattern: RegExp): boolean {
+  return pattern.test(item.title);
+}
+
 export function isTrustedClinicalEvidence(item: EvidenceItem): boolean {
   const type = item.sourceType || "";
   if (["guideline", "systematic_review", "meta_analysis", "rct"].includes(type)) return true;
 
   // PubMed/Crossref adapters do not always expose publication type. Infer only
-  // conservative, bibliographic labels from the title; never infer an RCT from
-  // results in an abstract.
-  const title = item.title.toLowerCase();
-  return /\b(?:clinical practice guideline|practice guideline|guidance paper|consensus statement|systematic review|meta[ -]?analysis)\b/i.test(title);
+  // conservative, bibliographic labels from the title; never infer a design
+  // from results claimed in an abstract.
+  const title = item.title;
+  return SYNTHESIS_TITLE_PATTERN.test(title) || RCT_TITLE_PATTERN.test(title);
 }
 
 /** Exclude records that cannot be responsibly used as clinical evidence. */
