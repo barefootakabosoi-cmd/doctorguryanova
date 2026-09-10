@@ -1,7 +1,10 @@
 // src/lib/pubmed.ts
 // Парсер научных статей из PubMed через E-utilities API
 
+import type { SourceType } from "./research-dossier";
+
 export interface PubMedArticle {
+  sourceType?: SourceType;
   pmid: string;
   title: string;
   abstract: string;
@@ -108,6 +111,16 @@ function parseSingleArticle(block: string): PubMedArticle | null {
   const pubDateMatch = block.match(/<PubDate>([\s\S]*?)<\/PubDate>/);
   const pubDate = pubDateMatch ? pubDateMatch[1].replace(/<[^>]+>/g, "").trim() : "";
 
+  // PublicationType — независимый библиографический ярлык PubMed (не вывод из
+  // текста abstract). Маппим в серверную типизацию источников.
+  const publicationTypes: string[] = [];
+  const pubTypeRegex = /<PublicationType[^>]*>([\s\S]*?)<\/PublicationType>/g;
+  let pubTypeMatch;
+  while ((pubTypeMatch = pubTypeRegex.exec(block)) !== null) {
+    publicationTypes.push(pubTypeMatch[1].replace(/<[^>]+>/g, "").trim());
+  }
+  const sourceType = mapPublicationType(publicationTypes);
+
   // Authors
   const authors: string[] = [];
   const authorRegex = /<Author[^>]*>[\s\S]*?<LastName>(.*?)<\/LastName>[\s\S]*?<ForeName>(.*?)<\/ForeName>[\s\S]*?<\/Author>/g;
@@ -123,8 +136,46 @@ function parseSingleArticle(block: string): PubMedArticle | null {
     authors: authors.slice(0, 5),
     journal,
     pubDate,
+    sourceType,
     url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
   };
+}
+
+const PUBLICATION_TYPE_MAP: Record<string, SourceType> = {
+  "systematic review": "systematic_review",
+  "meta-analysis": "meta_analysis",
+  "practice guideline": "guideline",
+  guideline: "guideline",
+  "randomized controlled trial": "rct",
+  "case reports": "clinical_case",
+  review: "review",
+};
+
+/** Maps official PubMed <PublicationType> labels to server source types. */
+// PubMed lists several labels per record in arbitrary order (e.g. "Review"
+// before "Systematic Review"), so the strongest structural label must win
+// rather than the first one encountered. A case-report label outranks a
+// generic "review" so a case series is never promoted into ordinary evidence.
+const TYPE_PRIORITY: SourceType[] = [
+  "systematic_review",
+  "meta_analysis",
+  "guideline",
+  "rct",
+  "clinical_case",
+  "review",
+];
+
+/** Maps official PubMed <PublicationType> labels to server source types. */
+export function mapPublicationType(types: string[]): SourceType | undefined {
+  const mapped = new Set<SourceType>();
+  for (const raw of types) {
+    const value = PUBLICATION_TYPE_MAP[raw.toLowerCase()];
+    if (value) mapped.add(value);
+  }
+  for (const candidate of TYPE_PRIORITY) {
+    if (mapped.has(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 // Главная функция: поиск + получение статей

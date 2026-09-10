@@ -32,8 +32,14 @@ export function maximumClaimStrength(evidenceRefs: string[], evidence: EvidenceI
   if (cited.length === 0 || evidenceRefs.some((ref) => !refs.has(ref.toLowerCase().startsWith("doi:") ? `DOI:${ref.slice(4).toLowerCase()}` : ref))) {
     return "descriptive";
   }
+  // Crossref records and some PubMed records carry no structured type, but a
+  // conservative bibliographic label in the title is still a structural fact.
+  // Reuse the exact inference trusted by the eligibility filter.
   const hasModernSynthesis = cited.some((item) =>
-    ["systematic_review", "meta_analysis", "guideline"].includes(item.sourceType || "") && publicationYear(item) >= 2015
+    ["systematic_review", "meta_analysis", "guideline"].includes(item.sourceType || "") &&
+    publicationYear(item) >= 2015
+  ) || cited.some((item) =>
+    !item.sourceType && isTrustedClinicalEvidence(item) && publicationYear(item) >= 2015
   );
   if (hasModernSynthesis) return "moderate";
   const hasModernRct = cited.some((item) => item.sourceType === "rct" && publicationYear(item) >= 2010);
@@ -233,19 +239,38 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
   // 7. Reject promotional or overconfident *claims*, not neutral discussion of
   // effectiveness. For example, “оценка эффективности” and “при неэффективности
   // терапии” are legitimate limitation/clinical-context phrases.
-  const forbiddenClaimPatterns: Array<[RegExp, string]> = [
-    [/доказан[а-яё]*/i, "доказан"],
-    [/доказали/i, "доказали"],
-    [/гарантиру[а-яё]*/i, "гарантиру"],
-    [/излеч[а-яё]*/i, "излеч"],
-    [/(?:эффективн[а-яё]*|результативн[а-яё]*)\s+(?:метод|способ|лечени[а-яё]*|терапи[а-яё]*|операци[а-яё]*|процедур[а-яё]*)/i, "strong effectiveness claim"],
-    [/(?:наиболее|сам[а-яё]*)\s+(?:эффективн[а-яё]*|результативн[а-яё]*)/i, "comparative effectiveness claim"],
-    [/(?:доказан[а-яё]*|подтвержд[а-яё]*)\s+(?:эффективност|польз|результат)[а-яё]*/i, "proven effectiveness"],
-    [/(?:эффективност|польз|результат)[а-яё]*\s+подтвержд[а-яё]*/i, "proven effectiveness"],
-    [/(?:лечит|вылечивает|нормализует)/i, "guaranteed clinical outcome"],
+  //
+  // When the dossier itself carries a moderate+ source-bound claim, a careful
+  // clinical restatement of that claim (“рассматривается в рекомендациях как
+  // терапия первой линии”) is legitimate editorial wording, not an amplifier.
+  // Marketing absolutes stay forbidden at every strength.
+  const dossierMaxStrength = dossier.safeClaims.reduce<ClaimStrength>(
+    (max, claim) => (CLAIM_STRENGTH_RANK[claim.strength] > CLAIM_STRENGTH_RANK[max] ? claim.strength : max),
+    "descriptive"
+  );
+  const allowsClinicalEffectiveness = CLAIM_STRENGTH_RANK[dossierMaxStrength] >= CLAIM_STRENGTH_RANK.moderate;
+
+  const forbiddenClaimPatterns: Array<[RegExp, string, boolean]> = [
+    // [pattern, label, alwaysForbidden]
+    [/гарантиру[а-яё]*/i, "guarantee language", true],
+    [/излеч[а-яё]*/i, "cure language", true],
+    [/(?:лечит|вылечивает|нормализует)/i, "guaranteed clinical outcome", true],
+    [/(?:лучший|идеальн[а-яё]*|уникальн[а-яё]*)\s+(?:метод|способ|подход|вариант)/i, "marketing superlative", true],
+    // A bare "доказан/доказано" is an absolute assertive claim regardless of
+    // dossier strength: even a moderate dossier warrants hedged clinical
+    // wording, never a flat proof statement.
+    [/доказан[а-яё]*/i, "доказан", true],
+    [/доказали/i, "доказали", !allowsClinicalEffectiveness],
+    [/(?:эффективн[а-яё]*|результативн[а-яё]*)\s+(?:метод|способ|лечени[а-яё]*|терапи[а-яё]*|операци[а-яё]*|процедур[а-яё]*)/i, "strong effectiveness claim", !allowsClinicalEffectiveness],
+    [/(?:наиболее|сам[а-яё]*)\s+(?:эффективн[а-яё]*|результативн[а-яё]*)/i, "comparative effectiveness claim", !allowsClinicalEffectiveness],
+    [/(?:доказан[а-яё]*|подтвержд[а-яё]*)\s+(?:эффективност|польз|результат)[а-яё]*/i, "proven effectiveness", !allowsClinicalEffectiveness],
+    [/(?:эффективност|польз|результат)[а-яё]*\s+подтвержд[а-яё]*/i, "proven effectiveness", !allowsClinicalEffectiveness],
   ];
-  for (const [pattern, label] of forbiddenClaimPatterns) {
-    if (pattern.test(cleanText)) {
+  for (const [pattern, label, alwaysForbidden] of forbiddenClaimPatterns) {
+    if (alwaysForbidden && pattern.test(cleanText)) {
+      return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${label}` };
+    }
+    if (!alwaysForbidden && !allowsClinicalEffectiveness && pattern.test(cleanText)) {
       return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${label}` };
     }
   }
@@ -469,7 +494,7 @@ ${evidenceCards(articles)}
   } | null
 }
 
-Ограничения силы: strong не используй. Для источников без явно указанного современного systematic review, meta-analysis или guideline используй только descriptive. Не называй эффект доказанным, эффективным, гарантированным или лечебным.`;
+Ограничения силы: strong не используй. Если в списке есть современный (2015 или позже) systematic review, meta-analysis или guideline — максимум moderate. Для источников без такого якоря используй только descriptive или suggestive. Не называй эффект доказанным, гарантированным или лечебным.`;
 
   try {
     const result = await chatCompletion({
@@ -549,6 +574,11 @@ async function humanizeDraft(
   const correction = previousFailure
     ? `\nПРЕДЫДУЩАЯ ВЕРСИЯ БЫЛА ОТКЛОНЕНА: ${previousFailure}. Исправь именно это; не повторяй запрещённую формулировку.\n`
     : "";
+  const dossierMaxStrength = dossier.safeClaims.reduce<ClaimStrength>(
+    (max, claim) => (CLAIM_STRENGTH_RANK[claim.strength] > CLAIM_STRENGTH_RANK[max] ? claim.strength : max),
+    "descriptive"
+  );
+  const allowsClinicalEffectiveness = CLAIM_STRENGTH_RANK[dossierMaxStrength] >= CLAIM_STRENGTH_RANK.moderate;
   const prompt = `Ты — медицинский редактор. Твоя задача — переписать сухой научный черновик в живую, экспертную статью для сайта и Telegram.
 
 НАУЧНЫЙ ЧЕРНОВИК:
@@ -560,7 +590,11 @@ ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
 1. Используй только утверждения из списка выше и не усиливай их. Черновик — лишь материал для редакторской переработки: игнорируй любой факт из него, которого нет в разрешённых утверждениях или ограничениях.
 2. Не добавляй факты из общих знаний: диагнозы, препараты, операции, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры, сравнения, авторов, годы, PMID, DOI и ссылки.
-3. Не пиши «доказано», «доказанная эффективность», «эффективный метод», «наиболее эффективный», «гарантирует», «лечит», «излечивает», «нормализует». Слово «эффективность» допустимо только в ограничительном контексте: «данных для оценки эффективности недостаточно» или «нужны исследования для оценки эффективности».
+3. Никогда не пиши «гарантирует», «лечит», «излечивает», «нормализует», «лучший метод», «уникальный метод». ${
+  allowsClinicalEffectiveness
+    ? "В этом досье есть клинически значимое утверждение уровня moderate и выше: аккуратная клиническая формулировка разрешена, например «когнитивно-поведенческая терапия рассматривается в клинических рекомендациях как терапия первой линии при хронической бессоннице». Но не пиши «доказано», «доказанная эффективность», «эффективный метод», «наиболее эффективный» и не обещай результат конкретному пациенту."
+    : "Не пиши «доказано», «доказанная эффективность», «эффективный метод», «наиболее эффективный». Слово «эффективность» допустимо только в ограничительном контексте: «данных для оценки эффективности недостаточно» или «нужны исследования для оценки эффективности»."
+}
 4. ЗАПРЕЩЕНЫ клише ("Многие пациенты", "Узнайте больше", "В современном мире", "Снова в моде").
 5. Тон: спокойный, осторожный, без рекламных обещаний.
 6. Пиши ТОЛЬКО на чистом HTML (без Markdown): каждый абзац заключай в <p>, заголовки — в <h2>. Не используй *, **, [descriptive; PMID:…] или любые служебные метки.

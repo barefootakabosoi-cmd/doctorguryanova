@@ -202,6 +202,14 @@ describe("Source eligibility and claim strength", () => {
     expect(result.dossier?.safeClaims[0].strength).toBe("descriptive");
   });
 
+  it("infers a synthesis ceiling from the title when no structured type exists", () => {
+    const crossrefLike = {
+      title: "Acupuncture for tension-type headache: a systematic review", journal: "J", pubDate: "2021",
+      abstract: "Synthesis of trials.", url: "https://example.test/crossref", doi: "10.1/crossref",
+    };
+    expect(maximumClaimStrength(["DOI:10.1/crossref"], [crossrefLike])).toBe("moderate");
+  });
+
   it("allows moderate but not strong claims with a modern systematic review", () => {
     expect(maximumClaimStrength(["PMID:22222222"], [modernReview])).toBe("moderate");
     const result = createDossierFromScienceGateResponse("Topic", {
@@ -209,6 +217,20 @@ describe("Source eligibility and claim strength", () => {
       safeClaims: [{ text: "Careful claim", strength: "moderate", evidenceRefs: ["PMID:22222222"] }],
     }, [modernReview]);
     expect(result.dossier).toBeDefined();
+  });
+
+  it("permits careful clinical wording when the dossier carries a moderate claim, but still bans marketing absolutes", () => {
+    const dossier = {
+      topic: "Topic", chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium" as const,
+      safeClaims: [{ text: "Рассматривается как терапия первой линии", strength: "moderate" as const, evidenceRefs: ["PMID:22222222"] }],
+      evidence: [modernReview],
+    };
+    const allowed = validateGeneratedClaims("<p>Когнитивно-поведенческая терапия рассматривается в клинических рекомендациях как терапия первой линии при этом состоянии.</p>", dossier);
+    expect(allowed.valid).toBe(true);
+    expect(validateGeneratedClaims("<p>Этот подход гарантирует результат.</p>", dossier).valid).toBe(false);
+    expect(validateGeneratedClaims("<p>Метод доказан.</p>", dossier).valid).toBe(false);
+    expect(validateGeneratedClaims("<p>Это лучший метод лечения.</p>", dossier).valid).toBe(false);
+    expect(validateGeneratedClaims("<p>Терапия нормализует сон.</p>", dossier).valid).toBe(false);
   });
 
   it("rejects promotional effectiveness claims but permits neutral limitation language", () => {

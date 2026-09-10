@@ -15,6 +15,10 @@ const mockXml = `<?xml version="1.0"?>
         <Journal>
           <Title>Neurotherapeutics</Title>
         </Journal>
+        <PublicationTypeList>
+          <PublicationType>Review</PublicationType>
+          <PublicationType>Systematic Review</PublicationType>
+        </PublicationTypeList>
       </Article>
       <DateCompleted><Year>2021</Year><Month>01</Month></DateCompleted>
     </MedlineCitation>
@@ -35,6 +39,9 @@ const mockXml = `<?xml version="1.0"?>
         <Journal>
           <Title>Sleep Medicine Reviews</Title>
         </Journal>
+        <PublicationTypeList>
+          <PublicationType>Randomized Controlled Trial</PublicationType>
+        </PublicationTypeList>
       </Article>
       <DateCompleted><Year>2020</Year><Month>01</Month></DateCompleted>
     </MedlineCitation>
@@ -47,6 +54,12 @@ const mockXml = `<?xml version="1.0"?>
 </PubmedArticleSet>`;
 
 describe("PubMed Source Integrity", () => {
+  it("maps official PublicationType labels to server source types", () => {
+    const articles = parseArticlesXml(mockXml);
+    expect(articles[0].sourceType).toBe("systematic_review");
+    expect(articles[1].sourceType).toBe("rct");
+  });
+
   it("should parse multiple articles with correct PMID-to-article mapping", () => {
     const articles = parseArticlesXml(mockXml);
 
