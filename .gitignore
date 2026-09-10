@@ -38,3 +38,4 @@ next-env.d.ts
 node_modules/
 .next/
 __pycache__/
+scripts/generate-draft.mjs
