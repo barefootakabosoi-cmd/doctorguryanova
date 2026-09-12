@@ -47,8 +47,23 @@ export async function POST(req: NextRequest) {
     const generated = result.content;
 
     const draftId = `draft-${Date.now()}`;
+    let draftSaved = false;
     if (process.env.KV_REST_API_URL) {
       await redis.set(draftId, JSON.stringify(generated), { ex: 86400 * 7 });
+      draftSaved = true;
+    } else {
+      console.warn("[content/generate] KV_REST_API_URL не задан — черновик НЕ сохранён; Telegram-уведомление с кнопками не отправляется (кнопки вели бы в несуществующий черновик)");
+    }
+
+    if (!draftSaved) {
+      // Черновик нигде не сохранён: кнопки «Опубликовать/Отклонить» и ссылка
+      // на редактор вели бы в несуществующий черновик — не отправляем уведомление.
+      return NextResponse.json({
+        success: false,
+        error: "draft_not_persisted",
+        detail: "Черновик сгенерирован, но не сохранён: отсутствует KV_REST_API_URL. Уведомление не отправлено.",
+        post: generated.post,
+      }, { status: 503 });
     }
 
     await sendTelegramMessage(
@@ -61,7 +76,7 @@ export async function POST(req: NextRequest) {
             [{ text: "📝 Открыть редактор", url: `https://doctorguryanova.ru/admin/content/${draftId}` }],
             [{ text: "❌ Отклонить", callback_data: `reject|${draftId}` }],
           ],
-        },
+        }
       }
     );
 
