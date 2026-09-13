@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createDossierFromScienceGateResponse, filterEligibleEvidence, filterEvidenceForAutomaticPublication, generateArticle, maximumClaimStrength, validateGeneratedClaims, evidenceUsedByClaims, markdownToHtml } from "../src/lib/content-pipeline";
+import { createDossierFromScienceGateResponse, filterEligibleEvidence, filterEvidenceForAutomaticPublication, generateArticle, maximumClaimStrength, validateGeneratedClaims, validateTitleAgainstDossier, evidenceUsedByClaims, markdownToHtml } from "../src/lib/content-pipeline";
 import { chatCompletion } from "../src/lib/gigachat";
 
 vi.mock("../src/lib/gigachat", () => ({
@@ -311,5 +311,138 @@ describe("Public-copy contract", () => {
     const html = markdownToHtml("<h2>Введение</h2>\nТекст о *Hirudo medicinalis*.");
     expect(html).toContain("<h2>Введение</h2>");
     expect(html).toContain("<p>Текст о <em>Hirudo medicinalis</em>.</p>");
+  });
+});
+
+
+describe("Evidence grounding: drugs and methods", () => {
+  const migraineDossier = {
+    topic: "мигрень у женщин", chosenAngle: "новые подходы к лечению мигрени у женщин",
+    keyFacts: ["Факт"], whatIsKnown: ["Известно"], whatIsNotKnown: ["Неизвестно"],
+    limitations: ["Данных о персонализации терапии у женщин недостаточно"], confidence: "medium" as const,
+    safeClaims: [{ text: "CGRP-антагонисты и ласмидитан рассматриваются как новые препараты для лечения мигрени", strength: "moderate" as const, evidenceRefs: ["PMID:34160823"] }],
+    evidence: [{ title: "AHS consensus", journal: "J", pubDate: "2021", abstract: "Consensus.", url: "https://example.test", pmid: "34160823" }],
+  };
+
+  it("rejects a drug invented from general knowledge and absent from the dossier", () => {
+    const result = validateGeneratedClaims("<p>Особое внимание уделено триптанам нового поколения.</p>", migraineDossier);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/Unsupported drug\/method mention: триптан/);
+  });
+
+  it("allows a drug grounded in the dossier claims", () => {
+    const result = validateGeneratedClaims("<p>В исследованиях изучались CGRP-антагонисты и ласмидитан.</p>", migraineDossier);
+    expect(result.valid).toBe(true);
+  });
+
+  it("does not block generic editorial wording without drug names", () => {
+    const result = validateGeneratedClaims("<p>Подходы к терапии обсуждаются с врачом.</p>", migraineDossier);
+    expect(result.valid).toBe(true);
+  });
+});
+
+describe("Title/topic consistency", () => {
+  const dossier = {
+    topic: "мигрень у женщин", chosenAngle: "новые подходы к лечению мигрени у женщин",
+    keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium" as const,
+    safeClaims: [{ text: "Осторожное утверждение", strength: "descriptive" as const, evidenceRefs: ["PMID:34160823"] }],
+    evidence: [{ title: "AHS consensus", journal: "J", pubDate: "2021", abstract: "Consensus.", url: "https://example.test", pmid: "34160823" }],
+  };
+
+  it("allows a reformulated title that keeps the subject and the audience", () => {
+    expect(validateTitleAgainstDossier("Как меняется лечение мигрени во время беременности", dossier).valid).toBe(true);
+    expect(validateTitleAgainstDossier("Новые подходы к лечению мигрени у женщин", dossier).valid).toBe(true);
+  });
+
+  it("rejects a title that switches the population group", () => {
+    const result = validateTitleAgainstDossier("Новые рекомендации по лечению мигрени у взрослых пациентов", dossier);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/audience drift: women -> adults/);
+  });
+
+  it("rejects a title that loses the dossier subject", () => {
+    const result = validateTitleAgainstDossier("Новые методы терапии головной боли напряжения", dossier);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toMatch(/drifts away from the dossier subject/);
+  });
+});
+
+describe("Attempt tagging and evidence trace in logs", () => {
+  const gatePass = (topic: string) => ({
+    choices: [{ message: { content: JSON.stringify({
+      topicMatches: true, relevantSources: 1, highQuality: 1, mediumQuality: 0, clinicalCases: 0,
+      isSufficient: true, reason: "Relevant RCT found",
+      dossier: {
+        chosenAngle: topic, keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [],
+        safeClaims: [{ text: "Claim 1", strength: "descriptive", evidenceRefs: ["PMID:123"] }],
+        confidence: "high",
+      },
+    }) } }],
+  });
+  const draftText = (t: string) => ({ choices: [{ message: { content: t } }] });
+  const humanized = (c: string) => ({ choices: [{ message: { content: `[CONTENT]\n${c}\n[/CONTENT]` } }] });
+  it("separates pipeline attempts in logs so evidence cannot be mixed visually", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
+      topicMatches: false, relevantSources: 1, highQuality: 0, mediumQuality: 2, clinicalCases: 0,
+      isSufficient: true, reason: "Off-topic sources", dossier: null,
+    }) } }] });
+    mockChat.mockResolvedValueOnce(gatePass("Second Topic"));
+    mockChat.mockResolvedValueOnce(draftText("Draft"));
+    mockChat.mockResolvedValueOnce(humanized("<p>Спокойный осторожный вывод.</p>"));
+
+    const lines: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => { lines.push(args.join(" ")); });
+    try {
+      const result = await generateArticle("Initial Topic");
+      expect(result.status).toBe("success");
+    } finally {
+      logSpy.mockRestore();
+    }
+    const log = lines.join("\n");
+    expect(log).toContain("[attempt-1] PIVOT");
+    expect(log).toMatch(/\[attempt-2\] Attempt 2/);
+    expect(log).toMatch(/\[attempt-2\] Trusted evidence eligible for publication: \d+ \[/);
+  });
+
+  it("logs the evidence inventory vs cited refs when a dossier is accepted", () => {
+    const evidence = [
+      { title: "A", journal: "J", pubDate: "2024", abstract: "A", url: "https://example.test/a", pmid: "11111111" },
+      { title: "B", journal: "J", pubDate: "2024", abstract: "B", url: "https://example.test/b", doi: "10.1/b" },
+    ];
+    const lines: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => { lines.push(args.join(" ")); });
+    const result = createDossierFromScienceGateResponse("Topic", {
+      chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium",
+      safeClaims: [{ text: "Claim", strength: "descriptive", evidenceRefs: ["PMID:11111111"] }],
+    }, evidence, "attempt-2");
+    logSpy.mockRestore();
+
+    expect(result.dossier).toBeDefined();
+    const log = lines.join("\n");
+    expect(log).toContain("[attempt-2] dossier accepted");
+    expect(log).toContain("evidence 2 [PMID:11111111, DOI:10.1/b]");
+    expect(log).toContain("cited in safeClaims: 1 [PMID:11111111]");
+  });
+
+  it("resolves a free-form topic to its SEO cluster so PubMed gets the English query", async () => {
+    const { getClusterByKeyword } = await import("../src/lib/seo-keywords");
+    vi.mocked(getClusterByKeyword).mockReturnValue({
+      primary: "бессонница лечение",
+      secondary: [], longtail: [], related: [],
+      pubmedQuery: "insomnia treatment non-pharmacological",
+    });
+
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(gatePass("бессонница лечение"));
+    mockChat.mockResolvedValueOnce(draftText("Draft"));
+    mockChat.mockResolvedValueOnce(humanized("<p>Осторожный вывод.</p>"));
+
+    const { getPubMedArticles } = await import("../src/lib/pubmed");
+    const mockPubmed = vi.mocked(getPubMedArticles);
+
+    const result = await generateArticle("бессонница лечение");
+    expect(result.status).toBe("success");
+    expect(mockPubmed).toHaveBeenCalledWith("insomnia treatment non-pharmacological", 5);
   });
 });

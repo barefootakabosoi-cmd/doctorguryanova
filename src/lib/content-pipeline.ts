@@ -116,6 +116,12 @@ export function evidenceUsedByClaims(dossier: ResearchDossier): EvidenceItem[] {
   );
 }
 
+function evidenceIds(items: EvidenceItem[]): string {
+  return items
+    .map((item) => (item.pmid ? `PMID:${item.pmid}` : item.doi ? `DOI:${item.doi}` : item.url))
+    .join(", ");
+}
+
 function evidenceRefSet(evidence: EvidenceItem[]): Set<string> {
   return new Set(evidence.flatMap((item) => [
     item.pmid ? `PMID:${item.pmid}` : "",
@@ -139,7 +145,8 @@ export function evidenceCards(evidence: EvidenceItem[]): string {
 export function createDossierFromScienceGateResponse(
   topic: string,
   rawDossier: unknown,
-  evidence: EvidenceItem[]
+  evidence: EvidenceItem[],
+  attemptId?: string
 ): { dossier?: ResearchDossier; reason?: string } {
   if (!rawDossier || typeof rawDossier !== "object") return { reason: "missing dossier" };
   const value = rawDossier as Record<string, unknown>;
@@ -174,7 +181,7 @@ export function createDossierFromScienceGateResponse(
       ? maximumStrength
       : requestedStrength;
     if (effectiveStrength !== requestedStrength) {
-      console.warn(`[ScienceGate] Claim strength capped: ${requestedStrength} -> ${effectiveStrength}`);
+      console.warn(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} Claim strength capped: ${requestedStrength} -> ${effectiveStrength}`);
     }
     safeClaims.push({ text, strength: effectiveStrength, evidenceRefs: normalizedRefs });
   }
@@ -189,8 +196,62 @@ export function createDossierFromScienceGateResponse(
   }
   const chosenAngle = cleanText(value.chosenAngle);
   if (!chosenAngle) return { reason: "missing chosen angle" };
+  // Diagnostic trace: what Science Gate accepted vs what the claims actually cite.
+  // Makes "3 sources declared, 1 in the dossier" visible per attempt.
+  const citedRefs = Array.from(new Set(safeClaims.flatMap((claim) => claim.evidenceRefs)));
+  console.log(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} dossier accepted: evidence ${evidence.length} [${evidenceIds(evidence)}]; cited in safeClaims: ${citedRefs.length} [${citedRefs.join(", ")}]`);
   return { dossier: { topic, chosenAngle, evidence, keyFacts, whatIsKnown, whatIsNotKnown, limitations, safeClaims, confidence: confidence as ResearchDossier["confidence"] } };
 }
+
+// ---------------------------------------------------------------------------
+// Conservative grounding dictionary (Evidence Contract, bugfix step 1).
+//
+// Where the list comes from: manual curation of specific drug and therapy
+// names that occur in the site's clinical clusters (headache, insomnia, back
+// pain, hypertension) and in known model hallucination patterns ("triptans
+// of the new generation" invented from general knowledge). Generic editorial
+// words ("терапия", "лечение", "метод") are deliberately NOT listed so
+// ordinary language cannot trigger a false block.
+//
+// Word forms: a stem matches by lowercase substring, which tolerates Russian
+// case endings ("триптан" ~ "триптаны", "триптанов"; "ласмидитан" ~
+// "ласмидитане") and Latin names ("CGRP", "lasmiditan").
+//
+// Unsupported = the stem appears in the public copy but nowhere in the
+// approved dossier vocabulary (topic, chosenAngle, safeClaims, limitations,
+// keyFacts, whatIsKnown, whatIsNotKnown). Negative context does NOT
+// legitimise a mention: a substance absent from the dossier must not be
+// named at all, even in negation.
+//
+// Known limitations, kept explicit:
+// - synonyms and trade names are not recognised; a determined model can
+//   still evade by paraphrase. This validator is a conservative net, not a
+//   semantic guarantee;
+// - semantic entailment ("does this statement actually follow from the
+//   source?") remains an open architectural task for a dedicated
+//   entailment-checking step. Not solvable by a regex by design.
+const KNOWN_DRUG_OR_METHOD_STEMS: readonly string[] = [
+  // Triptans and acute antimigraine drugs
+  "триптан", "суматриптан", "золмитриптан", "ризатриптан", "наратриптан", "элетриптан",
+  "ласмидитан", "lasmiditan", "гепант", "cgrp", "дигидроэрготамин", "эрготамин",
+  // Antiepileptics / prophylaxis / cardiovascular
+  "карбамазепин", "окскарбазепин", "габапентин", "прегабалин", "ламотриджин", "фенобарбитал",
+  "баклофен", "топирамат", "амитриптилин", "венлафаксин", "дулоксетин", "пропранолол",
+  "метопролол", "бисопролол", "верапамил", "флунаризин", "кандесартан", "лизиноприл",
+  // Analgesics / NSAIDs
+  "ибупрофен", "напроксен", "парацетамол", "ацетилсалицилов", "диклофенак", "кетопрофен",
+  // Sleep pharmacotherapy
+  "мелатонин", "агомелатин", "золпидем", "залеплон", "доксиламин", "тразодон",
+  "суворексант", "лемборексант", "даридорексант",
+  // Botulinum toxin and injections
+  "ботулотоксин", "блокад",
+  // Drug classes
+  "антидепрессант", "нейролептик", "бензодиазепин", "миорелаксант", "антигистамин", "нпвп",
+  // Specific non-drug methods (author-branded / often hallucinated)
+  "иглорефлексотерап", "акупунктур", "гирудотерап", "пиявк", "озонотерап", "криотерап",
+  "магнитотерап", "лазеротерап", "фототерап", "светотерап", "ароматерап", "гипнотерап",
+  "транскраниальн", "электромиостимуляц", "детензор", "бальнеотерап", "грязелеч",
+];
 
 export function validateGeneratedClaims(text: string, dossier: ResearchDossier): GeneratedClaimsValidation {
   if (!text) return { valid: true, text: "" };
@@ -286,11 +347,83 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
     }
   }
 
+  // Evidence-contract grounding: a named drug/method must be grounded in the
+  // dossier. Catches "триптаны нового поколения" when the dossier only
+  // contains CGRP/lasmiditan, plus the whole class of invented-substance
+  // hallucinations covered by the conservative dictionary above.
+  const approvedVocabulary = [
+    dossier.topic, dossier.chosenAngle,
+    ...dossier.safeClaims.map((claim) => claim.text),
+    ...dossier.limitations, ...dossier.keyFacts, ...dossier.whatIsKnown, ...dossier.whatIsNotKnown,
+  ].join(" ").toLowerCase();
+  const lowerText = cleanText.toLowerCase();
+  for (const stem of KNOWN_DRUG_OR_METHOD_STEMS) {
+    if (lowerText.includes(stem) && !approvedVocabulary.includes(stem)) {
+      return { valid: false, text: cleanText, reason: `Unsupported drug/method mention: ${stem}` };
+    }
+  }
+
   // Очищаем пустые теги
   cleanText = cleanText.replace(/<p>\s*<\/p>/gi, "");
   cleanText = cleanText.replace(/<li>\s*<\/li>/gi, "");
 
   return { valid: true, text: cleanText.trim() };
+}
+
+// ---------------------------------------------------------------------------
+// Title/topic consistency. Deliberately NOT a literal-match check: a good
+// title may reformulate the angle ("мигрень у женщин" -> "лечение мигрени во
+// время беременности"). Two minimal, explainable checks instead:
+// 1. subject survival — at least one meaningful topical word of the dossier
+//    (stem-based, so «мигрень» ~ «мигрени») must appear in the title;
+// 2. audience switch — if both dossier and title name a population group,
+//    they must be the same group. Refinement inside a group is allowed
+//    («женщин» -> «беременных» passes); switching the population
+//    («у женщин» -> «у взрослых пациентов») is rejected.
+// Semantic "does the title promise more than the dossier" stays an open task
+// for the future entailment step (see the dictionary comment above).
+const AUDIENCE_GROUPS: Readonly<Record<string, readonly string[]>> = {
+  women: ["женщин", "беременн", "кормящ"],
+  men: ["мужчин"],
+  children: ["детей", "детск", "подростк", "школьн", "дошкольн"],
+  adults: ["взросл", "пожил", "старческ"],
+};
+const TITLE_ENTITY_STOPWORDS = new Set([
+  "лечение", "лечения", "лечению", "лечении", "метод", "методы", "подход", "подходы",
+  "новые", "новый", "новых", "современные", "современный", "обзор", "применение",
+  "пациент", "пациенты", "пациентов", "тема", "темы", "вопрос", "вопросы",
+  "женщин", "женщины", "женщинам", "мужчин", "мужчины", "детей", "взрослых",
+  "взрослые", "пожилых", "пожилые",
+]);
+
+function wordStem(word: string): string {
+  return word.slice(0, Math.max(4, word.length - 2));
+}
+
+export function validateTitleAgainstDossier(title: string, dossier: ResearchDossier): GeneratedClaimsValidation {
+  const titleLower = title.toLowerCase();
+  const topicLower = `${dossier.topic} ${dossier.chosenAngle}`.toLowerCase();
+
+  const topicWords = (topicLower.match(/[а-яёa-z]+/g) ?? [])
+    .filter((word) => word.length >= 5 && !TITLE_ENTITY_STOPWORDS.has(word));
+  const entityStems = Array.from(new Set(topicWords.map(wordStem)));
+  if (entityStems.length > 0 && !entityStems.some((stem) => titleLower.includes(stem))) {
+    return { valid: false, text: title, reason: "title drifts away from the dossier subject" };
+  }
+
+  const audienceOf = (text: string): string | null => {
+    for (const [group, stems] of Object.entries(AUDIENCE_GROUPS)) {
+      if (stems.some((stem) => text.includes(stem))) return group;
+    }
+    return null;
+  };
+  const topicAudience = audienceOf(topicLower);
+  const titleAudience = audienceOf(titleLower);
+  if (topicAudience && titleAudience && topicAudience !== titleAudience) {
+    return { valid: false, text: title, reason: `title audience drift: ${topicAudience} -> ${titleAudience}` };
+  }
+
+  return { valid: true, text: title };
 }
 
 
@@ -466,7 +599,7 @@ export type GenerationResult =
   | { status: "no_suitable_topic" };
 
 // SCIENCE GATE
-async function evaluateEvidence(topic: string, articles: EvidenceItem[]): Promise<{ isSufficient: boolean; dossier?: ResearchDossier; reason?: string }> {
+async function evaluateEvidence(topic: string, articles: EvidenceItem[], attemptId?: string): Promise<{ isSufficient: boolean; dossier?: ResearchDossier; reason?: string }> {
   if (articles.length === 0) return { isSufficient: false, reason: "no trusted clinical evidence found" };
   if (!articles.some(isTrustedClinicalEvidence)) return { isSufficient: false, reason: "missing guideline, synthesis, or RCT evidence anchor" };
 
@@ -515,7 +648,7 @@ ${evidenceCards(articles)}
     });
 
     let rawText = result.choices[0]?.message?.content ?? "{}";
-    console.log("[ScienceGate] GigaChat raw response:", rawText);
+    console.log(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} GigaChat raw response:`, rawText);
 
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (jsonMatch) rawText = jsonMatch[0];
@@ -537,13 +670,13 @@ ${evidenceCards(articles)}
     const topicMatches = parsed.topicMatches === true;
     const isMathSufficient = highQuality >= 1 || (mediumQuality >= 2 && clinicalCases === 0);
     const finalIsSufficient = isMathSufficient && topicMatches;
-    console.log("[ScienceGate] decision", {
+    console.log(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} decision`, {
       topic, highQuality, mediumQuality, clinicalCases, topicMatches,
       isMathSufficient, finalIsSufficient, hasDossier: Boolean(parsed.dossier),
     });
 
     if (finalIsSufficient && parsed.dossier) {
-      const parsedDossier = createDossierFromScienceGateResponse(topic, parsed.dossier, articles);
+      const parsedDossier = createDossierFromScienceGateResponse(topic, parsed.dossier, articles, attemptId);
       if (!parsedDossier.dossier) {
         console.warn(`[ScienceGate] Rejected dossier: ${parsedDossier.reason}`);
         return { isSufficient: false, reason: parsedDossier.reason };
@@ -553,7 +686,7 @@ ${evidenceCards(articles)}
       return { isSufficient: false, reason: parsed.reason || "insufficient evidence" };
     }
   } catch (e) {
-    console.error("[ScienceGate] Error:", e);
+    console.error(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} Error:`, e);
     return { isSufficient: false, reason: "evaluation error" };
   }
 }
@@ -592,6 +725,9 @@ async function humanizeDraft(
   const allowsClinicalEffectiveness = CLAIM_STRENGTH_RANK[dossierMaxStrength] >= CLAIM_STRENGTH_RANK.moderate;
   const prompt = `Ты — медицинский редактор. Твоя задача — переписать сухой научный черновик в живую, экспертную статью для сайта и Telegram.
 
+ТЕМА ДОСЬЕ (заголовок и текст обязаны сохранять её предмет и целевую группу; обобщение темы запрещено): ${dossier.chosenAngle}
+Исходная тема запроса: ${dossier.topic}
+
 НАУЧНЫЙ ЧЕРНОВИК:
  ${draft}
 
@@ -611,6 +747,7 @@ ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.
 6. Пиши ТОЛЬКО на чистом HTML (без Markdown): каждый абзац заключай в <p>, заголовки — в <h2>. Не используй *, **, [descriptive; PMID:…] или любые служебные метки.
 7. ЗАПРЕЩЕНО добавлять блоки "Литература", "Источники", "Ключевые слова". Система добавит их автоматически.
 8. Для descriptive-утверждений не используй «широко применяется», «рекомендуется», «снижает риск», «улучшает» или описание механизма. Передавай только осторожный факт из разрешённого утверждения и его ограничения.
+9. Заголовок ([TITLE] и [TG_TITLE]) обязан сохранять предмет темы и её целевую группу. Уточнение внутри группы допустимо («мигрень у женщин» → «мигрень у беременных женщин»), обобщение с потерей группы — нет («мигрень у женщин» → «мигрень у взрослых пациентов» запрещено).
 
 Ответь СТРОГО в следующем формате (маркеры):
 
@@ -705,18 +842,24 @@ function conservativeFallback(dossier: ResearchDossier): { siteTitle: string; si
 // MAIN PIPELINE
 export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GenerationResult> {
   const maxAttempts = 3;
+  let lastAttemptId = "";
   let currentTopic = topic;
-  let currentCluster = cluster;
+  // Если кластер не передан явно (например, генерация по свободному topic),
+  // резолвим его из SEO-словаря: без него PubMed ищет по сырому русскому тексту
+  // и гарантированно получает 0 статей.
+  let currentCluster = cluster ?? getClusterByKeyword(topic);
   const attemptedTopics = new Set<string>(); // Запоминаем темы, которые уже пробовали
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    console.log(`[Pipeline] Attempt ${attempt + 1}: ${currentTopic}`);
+    const attemptId = `attempt-${attempt + 1}`;
+    lastAttemptId = attemptId;
+    console.log(`[Pipeline] [${attemptId}] Attempt ${attempt + 1}: ${currentTopic}`);
 
     const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
     const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
     const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
     const allArticles = filterEvidenceForAutomaticPublication(currentTopic, [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[]);
-    console.log(`[Pipeline] Trusted evidence eligible for publication: ${allArticles.length}`);
+    console.log(`[Pipeline] [${attemptId}] Trusted evidence eligible for publication: ${allArticles.length} [${evidenceIds(allArticles)}]`);
 
     if (allArticles.length === 0) {
       let nextCluster = getRandomCluster();
@@ -731,10 +874,10 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       continue;
     }
 
-    const { isSufficient, dossier, reason } = await evaluateEvidence(currentTopic, allArticles);
+    const { isSufficient, dossier, reason } = await evaluateEvidence(currentTopic, allArticles, attemptId);
 
     if (!isSufficient || !dossier) {
-      console.log(`[Pipeline] PIVOT. Reason: ${reason}.`);
+      console.log(`[Pipeline] [${attemptId}] PIVOT. Reason: ${reason}.`);
       let nextCluster = getRandomCluster();
       let safetyCounter = 0;
       while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
@@ -762,18 +905,26 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     let previousHumanizerFailure: string | undefined;
     const maxHumanizerAttempts = 3;
 
+    // Title gets two gates: the generic claim validator and the dedicated
+    // topic-consistency check (subject survival + audience preservation).
+    const combinedTitleValidation = (titleText: string): GeneratedClaimsValidation => {
+      const base = validateGeneratedClaims(titleText || "", dossier);
+      if (!base.valid) return base;
+      return validateTitleAgainstDossier(titleText || "", dossier);
+    };
+
     do {
       console.time(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
       versions = await humanizeDraft(draft, dossier, previousHumanizerFailure);
       console.timeEnd(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
 
-      titleValidation = validateGeneratedClaims(versions.siteTitle || "", dossier);
+      titleValidation = combinedTitleValidation(versions.siteTitle || "");
       excerptValidation = validateGeneratedClaims(versions.siteExcerpt || "", dossier);
       validation = validateGeneratedClaims(versions.siteContent || "", dossier);
       telegramValidation = validateGeneratedClaims(versions.telegramPost || "", dossier);
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
         previousHumanizerFailure = titleValidation.reason || excerptValidation.reason || validation.reason || telegramValidation.reason;
-        console.warn(`[Pipeline] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${previousHumanizerFailure}`);
+        console.warn(`[Pipeline] [${attemptId}] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${previousHumanizerFailure}`);
       }
       humanizerAttempts++;
     } while ((!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) && humanizerAttempts < maxHumanizerAttempts);
@@ -781,7 +932,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
       console.warn("[Pipeline] Humanizer failed after max attempts; using conservative evidence-only fallback.");
       versions = conservativeFallback(dossier);
-      titleValidation = validateGeneratedClaims(versions.siteTitle, dossier);
+      titleValidation = combinedTitleValidation(versions.siteTitle);
       excerptValidation = validateGeneratedClaims(versions.siteExcerpt, dossier);
       validation = validateGeneratedClaims(versions.siteContent, dossier);
       telegramValidation = validateGeneratedClaims(versions.telegramPost, dossier);
@@ -831,7 +982,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     };
   }
 
-  console.log("[Pipeline] Failed to find sufficient evidence after max attempts. No draft created.");
+  console.log(`[Pipeline] Failed to find sufficient evidence after max attempts${lastAttemptId ? ` (last: ${lastAttemptId})` : ""}. No draft created.`);
   return { status: "no_suitable_topic" };
 }
 
