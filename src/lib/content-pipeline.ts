@@ -270,8 +270,12 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
   }
 
   // Humanizer is required to return HTML, not residual Markdown.
-  if (/(?:^|\s)#{1,3}\s|\*\*[^*]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*)/.test(cleanText)) {
-    return { valid: false, text: cleanText, reason: "Markdown leaked into public copy" };
+  // The reason carries the offending fragment so pipeline logs show exactly
+  // which construction breaks validation (the attempt loop prefixes the field).
+  const markdownLeak = cleanText.match(/(?:^|\s)#{1,3}\s|\*\*[^*]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*)/);
+  if (markdownLeak) {
+    const fragment = markdownLeak[0].trim().replace(/\s+/g, " ").slice(0, 60);
+    return { valid: false, text: cleanText, reason: `Markdown leaked into public copy: "${fragment}"` };
   }
 
   // 3. Generated author/year citations are not allowed in generated copy.
@@ -510,7 +514,8 @@ export function markdownToHtml(md: string): string {
   });
   if (!hasMarkdown && !hasBareLine) return html;
 
-  // Заголовки
+  // Заголовки (4+ решёток сворачиваем в h3 — модель иногда шлёт ####)
+  html = html.replace(/^#{4,} (.+)$/gm, "<h3>$1</h3>");
   html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
   html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
   html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
@@ -558,7 +563,22 @@ export function markdownToHtml(md: string): string {
 
 
 // Очистка текста от битых символов кодировки (например, к��гнитивно)
-function sanitizeBadEncoding(text: string): string {
+
+/**
+ * TITLE/EXCERPT/TG_* are plain-text fields. Residual markdown there is a
+ * formatting artifact of the model, not content: strip the markers
+ * deterministically BEFORE validation, so the validated text is exactly the
+ * published text. No words are added, removed or reordered.
+ */
+export function stripResidualMarkdown(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]*)\*\*/g, "$1")
+    .replace(/\*/g, "");
+}
+
+export function sanitizeBadEncoding(text: string): string {
   if (!text) return "";
   // Удаляем символ замены (U+FFFD) и другие нечитаемые символы
   return text.replace(/\uFFFD/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
@@ -782,7 +802,10 @@ HTML-статья для сайта. Структура: <h2>Введение</h
 
   let rawText = result.choices[0]?.message?.content ?? "";
   // Вырезаем возможные Markdown code-blocks (```)
-  rawText = rawText.replace(/```[a-z]*\\n?/g, '').replace(/```/g, '');
+  rawText = rawText.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
+  // Deterministic character-level cleanup: the model sometimes emits U+FFFD
+  // ("ко<FFFD>гнитивно"). Formatting only — no words are added or removed.
+  rawText = sanitizeBadEncoding(rawText);
   // Preserve HTML for [CONTENT]; a plain version is for logs only.
   const plainRawText = rawText.replace(/<[^>]+>/g, '');
   console.log("[Humanizer] GigaChat raw response:", plainRawText);
@@ -793,14 +816,16 @@ HTML-статья для сайта. Структура: <h2>Введение</h
     return match ? match[1].trim() : "";
   };
 
-  // Умный Fallback
-  let siteTitle = extract("TITLE") || dossier.chosenAngle;
+  // TITLE/EXCERPT/TG_* are plain-text fields: residual markdown there is a
+  // formatting artifact, deterministically stripped BEFORE validation (same
+  // policy as bibliography/URL cleanup). CONTENT keeps markdownToHtml.
+  let siteTitle = stripResidualMarkdown(extract("TITLE") || dossier.chosenAngle);
   siteTitle = siteTitle.charAt(0).toUpperCase() + siteTitle.slice(1);
 
-  let siteExcerpt = extract("EXCERPT") || "Профессиональный разбор темы";
+  let siteExcerpt = stripResidualMarkdown(extract("EXCERPT") || "Профессиональный разбор темы");
   let siteContent = markdownToHtml(extract("CONTENT")) || `<p>${draft}</p>`;
-  let telegramTitle = extract("TG_TITLE") || siteTitle;
-  let telegramPost = extract("TG_POST").replace(/\\[\\/?TG_POST\\]/g, '').trim();
+  let telegramTitle = stripResidualMarkdown(extract("TG_TITLE") || siteTitle);
+  let telegramPost = stripResidualMarkdown(extract("TG_POST").replace(/\[\/?TG_POST\]/g, '').trim());
   if (!telegramPost) {
     // Fallback: ищем текст после [TG_POST] до конца или до следующего маркера
     const tgFallback = rawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
@@ -812,31 +837,6 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   }
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
-}
-
-/**
- * The LLM may repeatedly use promotional wording even after a precise retry
- * instruction. Do not discard an evidence-approved topic solely because of
- * that editorial failure: fall back to a deliberately conservative,
- * source-backed shell. It makes no treatment or effectiveness claim; the
- * automatically appended bibliography remains available for clinician review.
- */
-function conservativeFallback(dossier: ResearchDossier): { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string } {
-  // Never reuse an LLM-selected angle in the fallback: it may contain an
-  // unsupported effectiveness promise even when the source dossier is sound.
-  const topic = sanitizeHtml(dossier.topic, { allowedTags: [], allowedAttributes: {} }).trim();
-  const title = `Обзор источников по теме: ${topic}`.slice(0, 120);
-  const excerpt = "Краткий обзор доступных публикаций по теме с указанием ограничений имеющихся данных.";
-  const content = [
-    "<h2>О чём этот обзор</h2>",
-    `<p>В материале собраны публикации по теме «${topic}». Перечень использованных источников приведён в конце страницы.</p>`,
-    "<h2>Как интерпретировать данные</h2>",
-    "<p>Результаты отдельных исследований и обзоров не заменяют очную оценку врача. Применимость данных зависит от клинической ситуации, сопутствующих состояний и целей обследования или лечения.</p>",
-    "<h2>Ограничения</h2>",
-    "<p>Для практических решений важны дизайн исследований, их актуальность и качество доступных данных. При необходимости тактику обсуждают со специалистом.</p>"
-  ].join("\n");
-  const telegramPost = "Подготовлен обзор доступных публикаций по теме. В статье указаны источники и ограничения имеющихся данных; решение о тактике принимают после консультации со специалистом.";
-  return { siteTitle: title, siteExcerpt: excerpt, siteContent: content, telegramTitle: title, telegramPost };
 }
 
 // MAIN PIPELINE
@@ -918,10 +918,12 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       versions = await humanizeDraft(draft, dossier, previousHumanizerFailure);
       console.timeEnd(`Pipeline Step 3 (Humanizer Attempt ${humanizerAttempts + 1})`);
 
-      titleValidation = combinedTitleValidation(versions.siteTitle || "");
-      excerptValidation = validateGeneratedClaims(versions.siteExcerpt || "", dossier);
-      validation = validateGeneratedClaims(versions.siteContent || "", dossier);
-      telegramValidation = validateGeneratedClaims(versions.telegramPost || "", dossier);
+      const withField = (v: GeneratedClaimsValidation, field: string): GeneratedClaimsValidation =>
+        v.valid ? v : { ...v, reason: `${field}: ${v.reason}` };
+      titleValidation = withField(combinedTitleValidation(versions.siteTitle || ""), "title");
+      excerptValidation = withField(validateGeneratedClaims(versions.siteExcerpt || "", dossier), "excerpt");
+      validation = withField(validateGeneratedClaims(versions.siteContent || "", dossier), "content");
+      telegramValidation = withField(validateGeneratedClaims(versions.telegramPost || "", dossier), "telegramPost");
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
         previousHumanizerFailure = titleValidation.reason || excerptValidation.reason || validation.reason || telegramValidation.reason;
         console.warn(`[Pipeline] [${attemptId}] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${previousHumanizerFailure}`);
@@ -930,27 +932,20 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     } while ((!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) && humanizerAttempts < maxHumanizerAttempts);
 
     if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
-      console.warn("[Pipeline] Humanizer failed after max attempts; using conservative evidence-only fallback.");
-      versions = conservativeFallback(dossier);
-      titleValidation = combinedTitleValidation(versions.siteTitle);
-      excerptValidation = validateGeneratedClaims(versions.siteExcerpt, dossier);
-      validation = validateGeneratedClaims(versions.siteContent, dossier);
-      telegramValidation = validateGeneratedClaims(versions.telegramPost, dossier);
-      // The fallback is deterministic. Keep a defensive guard in case its text
-      // is changed in the future without matching validator updates.
-      if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
-        console.error("[Pipeline] Conservative fallback failed validation; PIVOT.");
-        let nextCluster = getRandomCluster();
-        let safetyCounter = 0;
-        while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
-          nextCluster = getRandomCluster();
-          safetyCounter++;
-        }
-        currentCluster = nextCluster;
-        currentTopic = currentCluster.primary;
-        attemptedTopics.add(currentTopic);
-        continue;
+      // Evidence Contract: a Humanizer result that failed validation is
+      // rejected, never substituted with generated filler. PIVOT to another
+      // evidence-eligible topic instead of publishing an angle-less shell.
+      console.warn(`[Pipeline] [${attemptId}] Humanizer failed after max attempts (${previousHumanizerFailure ?? "unknown reason"}); PIVOT.`);
+      let nextCluster = getRandomCluster();
+      let safetyCounter = 0;
+      while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
+        nextCluster = getRandomCluster();
+        safetyCounter++;
       }
+      currentCluster = nextCluster;
+      currentTopic = currentCluster.primary;
+      attemptedTopics.add(currentTopic);
+      continue;
     }
 
     const siteContent = sanitizeContent(validation.text).trim();

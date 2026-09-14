@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { createDossierFromScienceGateResponse, filterEligibleEvidence, filterEvidenceForAutomaticPublication, generateArticle, maximumClaimStrength, validateGeneratedClaims, validateTitleAgainstDossier, evidenceUsedByClaims, markdownToHtml } from "../src/lib/content-pipeline";
+import { createDossierFromScienceGateResponse, filterEligibleEvidence, filterEvidenceForAutomaticPublication, generateArticle, maximumClaimStrength, validateGeneratedClaims, validateTitleAgainstDossier, evidenceUsedByClaims, markdownToHtml, stripResidualMarkdown, sanitizeBadEncoding } from "../src/lib/content-pipeline";
+import { getRandomCluster } from "../src/lib/seo-keywords";
 import { chatCompletion } from "../src/lib/gigachat";
 
 vi.mock("../src/lib/gigachat", () => ({
@@ -76,27 +77,32 @@ describe("Pipeline Evidence-Locked v4", () => {
     expect(mockChat).toHaveBeenCalledTimes(4);
   });
 
-  it("Test 2: FAIL x3 -> conservative fallback", async () => {
+  it("Test 2: Humanizer FAIL x3 -> PIVOT to a new topic (no filler substitution)", async () => {
     mockChat.mockReset();
-    // Topic 1
-    mockChat.mockResolvedValueOnce(mockScienceGatePass("Test Topic 1"));
+    vi.mocked(getRandomCluster).mockReturnValue({ primary: "Pivoted Topic", pubmedQuery: "Pivoted Query", secondary: [], longtail: [] });
+    // Attempt 1 on "Initial Topic": gate passes, but Humanizer fails 3 times
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Initial Topic"));
     mockChat.mockResolvedValueOnce(mockDraft("Draft 1"));
     mockChat.mockResolvedValueOnce(mockHumanizer("<p>Эффективность подтверждена.</p>"));
     mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это доказано.</p>"));
     mockChat.mockResolvedValueOnce(mockHumanizer("<p>Гарантирует выздоровление.</p>"));
+    // PIVOT -> attempt 2 on "Pivoted Topic": full success
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Pivoted Topic"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft 2"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это безопасный вывод по новой теме.</p>"));
 
     const result = await generateArticle("Initial Topic");
 
     expect(result.status).toBe("success");
     if (result.status === "success") {
-      expect(result.content.post.content).not.toContain("доказано");
-      expect(result.content.post.content).not.toContain("подтверждена");
+      // The rejected material was never published: no rejected claims, no filler shell.
+      expect(result.content.post.content).toContain("безопасный вывод");
       expect(result.content.post.content).not.toContain("Гарантирует");
-      expect(result.content.post.content).toContain("О чём этот обзор");
-      expect(result.content.post.content).toContain("Как интерпретировать данные");
-      expect(result.content.post.content).not.toContain("безопасно");
+      expect(result.content.post.content).not.toContain("О чём этот обзор");
+      // Topic moved to the pivoted cluster
+      expect(result.content.post.keywords).toContain("Pivoted Topic");
     }
-    expect(mockChat).toHaveBeenCalledTimes(5);
+    expect(mockChat).toHaveBeenCalledTimes(8);
   });
 });
 
@@ -444,5 +450,30 @@ describe("Attempt tagging and evidence trace in logs", () => {
     const result = await generateArticle("бессонница лечение");
     expect(result.status).toBe("success");
     expect(mockPubmed).toHaveBeenCalledWith("insomnia treatment non-pharmacological", 5);
+  });
+
+  it("stripResidualMarkdown removes markers without touching words", () => {
+    expect(stripResidualMarkdown("## Заголовок")).toBe("Заголовок");
+    expect(stripResidualMarkdown("**Жирный** текст")).toBe("Жирный текст");
+    expect(stripResidualMarkdown("Список:\n- пункт")).toBe("Список:\n- пункт"); // list dash kept (not a marker we strip)
+    expect(stripResidualMarkdown("Слово *акцент* здесь")).toBe("Слово акцент здесь"); // single asterisks removed, word kept
+  });
+
+  it("sanitizeBadEncoding removes U+FFFD and control characters", () => {
+    expect(sanitizeBadEncoding("ког\uFFFDнитивно")).toBe("когнитивно");
+    expect(sanitizeBadEncoding("текст\x07ещё")).toBe("текстещё");
+    expect(sanitizeBadEncoding("чистый текст")).toBe("чистый текст");
+  });
+
+  it("markdown leak reason contains the exact fragment and field prefix is added by the pipeline", () => {
+    const dossier = {
+      topic: "Тема", chosenAngle: "Тема", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium" as const,
+      safeClaims: [{ text: "Осторожный вывод", strength: "descriptive" as const, evidenceRefs: ["PMID:123"] }],
+      evidence: [],
+    };
+    const result = validateGeneratedClaims("<p>Осторожный вывод.</p>\n## Заголовок раздела", dossier);
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain("Markdown leaked");
+    expect(result.reason).toContain("##");
   });
 });
