@@ -280,7 +280,9 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
 
   // 3. Generated author/year citations are not allowed in generated copy.
   // Reject rather than deleting a fragment and leaving an orphaned attribution.
-  if (/\([^)]*?(?:19|20)\d{2}[^)]*?\)/.test(cleanText)) {
+  // Digit boundaries (?<!\d /?!\d) so a PMID like 31927422 (contains "1927")
+  // inside parentheses is not misread as a year, while "(...в 2019 году)" still is.
+  if (/\([^)]*?(?<!\d)(?:19|20)\d{2}(?!\d)[^)]*?\)/.test(cleanText)) {
     return { valid: false, text: cleanText, reason: "Generated author/year citation detected" };
   }
 
@@ -454,7 +456,7 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
 
   // 5. Удаляем ссылки в формате (Фамилия И.О., Год) или (Familia et al., God)
   // Жадный regex: ловит любые символы в скобках, если там есть 4 цифры (год)
-  cleanText = cleanText.replace(/\([^)]*?(?:19|20)\d{2}[^)]*?\)/g, "");
+  cleanText = cleanText.replace(/\((?<!\d)[^)]*?(?<!\d)(?:19|20)\d{2}(?!\d)[^)]*?\)/g, "");
 
   // 6. Удаляем строки, похожие на типичный список литературы (начинающиеся с цифры, точки и заглавной буквы)
   // Жадный regex до конца строки
@@ -751,8 +753,8 @@ async function humanizeDraft(
 НАУЧНЫЙ ЧЕРНОВИК:
  ${draft}
 
-РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ:
-${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
+РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ (используй ТОЛЬКО их смысл; служебные метки вида [moderate; PMID:...] в текст статьи НЕ переноси — они только для сверки):
+${dossier.safeClaims.map((claim) => `- ${claim.text}`).join("\n")}
 ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}${correction}
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
 1. Используй только утверждения из списка выше и не усиливай их. Черновик — лишь материал для редакторской переработки: игнорируй любой факт из него, которого нет в разрешённых утверждениях или ограничениях.
@@ -925,7 +927,12 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       validation = withField(validateGeneratedClaims(versions.siteContent || "", dossier), "content");
       telegramValidation = withField(validateGeneratedClaims(versions.telegramPost || "", dossier), "telegramPost");
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
-        previousHumanizerFailure = titleValidation.reason || excerptValidation.reason || validation.reason || telegramValidation.reason;
+        // Aggregate EVERY failed field: feeding back only the first reason lets
+        // the model fix one field and regress another (observed whack-a-mole:
+        // excerpt -> content -> excerpt again across three attempts).
+        previousHumanizerFailure = [
+          titleValidation, excerptValidation, validation, telegramValidation,
+        ].filter((v) => !v.valid).map((v) => v.reason).join("; ");
         console.warn(`[Pipeline] [${attemptId}] Humanizer validation failed (Attempt ${humanizerAttempts + 1}): ${previousHumanizerFailure}`);
       }
       humanizerAttempts++;

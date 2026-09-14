@@ -77,6 +77,72 @@ describe("Pipeline Evidence-Locked v4", () => {
     expect(mockChat).toHaveBeenCalledTimes(4);
   });
 
+  it("author/year check: PMID inside parentheses is NOT a citation, a real year is", () => {
+    const dossier = {
+      topic: "Topic", chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium" as const,
+      safeClaims: [{ text: "КПТ улучшает сон", strength: "moderate" as const, evidenceRefs: ["PMID:31927422"] }],
+      evidence: [{ title: "R", journal: "J", pubDate: "2022", abstract: "Systematic review.", url: "https://e.test/r", pmid: "31927422", sourceType: "systematic_review" as const }],
+    };
+    // PMID digits inside parentheses must NOT trip the year detector
+    const withPmid = validateGeneratedClaims(
+      "<p>Согласно обзору (PMID: 31927422), КПТ улучшает сон.</p>",
+      dossier,
+    );
+    expect(withPmid.valid).toBe(true);
+
+    // A genuine year in parentheses IS a generated citation
+    const withYear = validateGeneratedClaims(
+      "<p>Согласно обзору (в 2019 году), КПТ улучшает сон.</p>",
+      dossier,
+    );
+    expect(withYear.valid).toBe(false);
+    expect(withYear.reason).toBe("Generated author/year citation detected");
+  });
+
+  it("Humanizer prompt shows allowed claims WITHOUT service markers", () => {
+    // GigaChat copies the "[moderate; PMID:...]" example verbatim into the
+    // article body (observed leak) — the prompt must not display it there.
+    const fs = require("fs");
+    const src = fs.readFileSync("src/lib/content-pipeline.ts", "utf-8");
+    const promptIdx = src.indexOf("РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ (используй ТОЛЬКО их смысл");
+    expect(promptIdx).toBeGreaterThan(-1);
+    const blockEnd = src.indexOf("\nОГРАНИЧЕНИЯ:", promptIdx);
+    expect(blockEnd).toBeGreaterThan(promptIdx);
+    // The claims list itself (between the header and ОГРАНИЧЕНИЯ) must be
+    // marker-free; the warning naming the marker pattern lives in the header.
+    const claimsBlock = src.slice(promptIdx, blockEnd);
+    expect(claimsBlock).toContain("- ${claim.text}");
+  });
+
+  it("retry feedback aggregates ALL failed fields, not just the first", async () => {
+    mockChat.mockReset();
+    vi.mocked(getRandomCluster).mockReturnValue({ primary: "Pivoted Topic", pubmedQuery: "Pivoted Query", secondary: [], longtail: [] });
+    // Attempt 1: excerpt AND content invalid in the SAME response -> the
+    // feedback line must name both fields at once (anti whack-a-mole).
+    const badPair = { choices: [{ message: { content: "[TITLE]Заголовок[/TITLE]\n[EXCERPT]Это доказано.[/EXCERPT]\n[CONTENT]<p>Это доказано.</p>[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]Пост[/TG_POST]" } }] };
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Initial Topic"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft 1"));
+    mockChat.mockResolvedValueOnce(badPair);
+    mockChat.mockResolvedValueOnce(badPair);
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[TITLE]Заголовок[/TITLE]\n[EXCERPT]Выжимка[/EXCERPT]\n[CONTENT]<p>Гарантирует выздоровление.</p>[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]Пост[/TG_POST]" } }] });
+    // PIVOT -> attempt 2 full success
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Pivoted Topic"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft 2"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это безопасный вывод по новой теме.</p>"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await generateArticle("Initial Topic");
+      const aggregated = warnSpy.mock.calls
+        .map(([m]) => String(m))
+        .filter((m) => m.includes("Humanizer validation failed"))
+        .join("\n");
+      expect(aggregated).toMatch(/excerpt:[\s\S]*content:|content:[\s\S]*excerpt:/);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("Test 2: Humanizer FAIL x3 -> PIVOT to a new topic (no filler substitution)", async () => {
     mockChat.mockReset();
     vi.mocked(getRandomCluster).mockReturnValue({ primary: "Pivoted Topic", pubmedQuery: "Pivoted Query", secondary: [], longtail: [] });
