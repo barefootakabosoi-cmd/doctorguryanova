@@ -207,3 +207,32 @@ describe("Quantitative coverage for site content", () => {
     expect(v.valid).toBe(true);
   });
 });
+
+describe("Quantitative gate: cleaned vs raw input (production bypass regression)", () => {
+  // Regression note: production dossier (draft-1790100173338) carried a
+  // meta_analysis source; the shared dossier() helper sets no sourceType,
+  // so the quantitative gate never armed and valid:false was never reached.
+  const quantDossier = () => {
+    const d = dossier("moderate");
+    (d.evidence[0] as unknown as Record<string, unknown>).sourceType = "meta_analysis";
+    return d;
+  };
+
+  const RAW_FIGURE_FREE = "<h2>Введение</h2><p>Состояние описано в общем виде.</p><h2>Источники</h2><ul><li>Журнал, 2022Nov21</li></ul>";
+
+  it("gate runs on CLEANED copy: years in raw sources tail no longer satisfy it", () => {
+    const claims = validateGeneratedClaims(RAW_FIGURE_FREE, dossier("moderate"));
+    expect(claims.valid).toBe(true);
+    const gate = validateQuantitativeCoverage(claims.text || "", quantDossier());
+    expect(gate.valid).toBe(false);
+    expect(gate.reason).toBeTruthy();
+  });
+
+  it("gate passes cleaned copy that carries evidence figures", () => {
+    const raw = "<p>Метаанализ 14 исследований: эффект g -0.52 (95% CI -0.73..-0.32) против отсутствия лечения.</p>";
+    const claims = validateGeneratedClaims(raw, dossier("moderate"));
+    expect(claims.valid).toBe(true);
+    const gate = validateQuantitativeCoverage(claims.text || raw, quantDossier());
+    expect(gate.valid).toBe(true);
+  });
+});

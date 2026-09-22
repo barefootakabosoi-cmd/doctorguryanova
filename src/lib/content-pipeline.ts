@@ -317,7 +317,12 @@ export function findForbiddenAmplifier(cleanText: string, dossierMaxStrength: Cl
 // vague "исследования показали" template. Telegram copy is exempt (length).
 export function validateQuantitativeCoverage(siteContent: string, dossier: ResearchDossier): GeneratedClaimsValidation {
   const hasQuantEvidence = dossier.evidence.some((e) => /systematic.?review|meta.?analys|guideline/i.test(String(e.sourceType || "")));
-  if (!hasQuantEvidence || /\d/.test(siteContent)) return { valid: true, text: siteContent };
+  // Figures must come from article TEXT, not markup: heading tags like <h2>
+  // contain "2", which made /\d/ always true and this gate never rejected a
+  // figure-free article (production draft-1790100173338: meta_analysis
+  // evidence, zero figures in the body, gate passed). Test visible text only.
+  const visibleText = (siteContent || "").replace(/<[^>]*>/g, " ");
+  if (!hasQuantEvidence || /\d/.test(visibleText)) return { valid: true, text: siteContent };
   return { valid: false, text: siteContent, reason: "quantitative results of the review not reflected in the article (no figures from the evidence)" };
 }
 
@@ -995,7 +1000,13 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       titleValidation = withField(combinedTitleValidation(versions.siteTitle || ""), "title");
       excerptValidation = withField(validateGeneratedClaims(versions.siteExcerpt || "", dossier), "excerpt");
       const contentBase = withField(validateGeneratedClaims(versions.siteContent || "", dossier), "content");
-      validation = contentBase.valid ? withField(validateQuantitativeCoverage(versions.siteContent || "", dossier), "content") : contentBase;
+      // Quantitative gate MUST see the cleaned copy: validateGeneratedClaims
+      // strips the model-emitted bibliography tail and [n] markers, while the
+      // gate previously received the RAW string - years inside the tail
+      // satisfied /\d/ and defeated the gate, while the saved article carried
+      // zero figures from the meta-analysis (production E2E,
+      // draft-1790100173338). Gate the copy that will actually be saved.
+      validation = contentBase.valid ? withField(validateQuantitativeCoverage(contentBase.text || "", dossier), "content") : contentBase;
       telegramValidation = withField(validateGeneratedClaims(versions.telegramPost || "", dossier), "telegramPost");
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
         // Aggregate EVERY failed field: feeding back only the first reason lets
