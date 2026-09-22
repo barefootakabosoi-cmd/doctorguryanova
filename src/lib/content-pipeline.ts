@@ -183,6 +183,13 @@ export function createDossierFromScienceGateResponse(
     if (effectiveStrength !== requestedStrength) {
       console.warn(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} Claim strength capped: ${requestedStrength} -> ${effectiveStrength}`);
     }
+    // Whitelist hygiene: claim texts feed the approved-vocabulary whitelist
+    // downstream, so run the anti-amplification table here with the claim's
+    // own (server-capped) strength. Rejection sends the attempt to retry.
+    const claimAmplifier = findForbiddenAmplifier(text, effectiveStrength);
+    if (claimAmplifier) {
+      return { reason: `safe claim text rejected: ${claimAmplifier}` };
+    }
     safeClaims.push({ text, strength: effectiveStrength, evidenceRefs: normalizedRefs });
   }
 
@@ -190,6 +197,9 @@ export function createDossierFromScienceGateResponse(
   const whatIsKnown = cleanArray(value.whatIsKnown);
   const whatIsNotKnown = cleanArray(value.whatIsNotKnown);
   const limitations = cleanArray(value.limitations);
+  // Clinical cautions extracted from source abstracts (e.g. post-exertional
+  // exacerbation): optional, dossiers without the field get an empty list.
+  const cautions = cleanArray(value.cautions) ?? [];
   const confidence = value.confidence;
   if (!keyFacts || !whatIsKnown || !whatIsNotKnown || !limitations || !["high", "medium", "low"].includes(String(confidence))) {
     return { reason: "malformed dossier fields" };
@@ -200,7 +210,7 @@ export function createDossierFromScienceGateResponse(
   // Makes "3 sources declared, 1 in the dossier" visible per attempt.
   const citedRefs = Array.from(new Set(safeClaims.flatMap((claim) => claim.evidenceRefs)));
   console.log(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} dossier accepted: evidence ${evidence.length} [${evidenceIds(evidence)}]; cited in safeClaims: ${citedRefs.length} [${citedRefs.join(", ")}]`);
-  return { dossier: { topic, chosenAngle, evidence, keyFacts, whatIsKnown, whatIsNotKnown, limitations, safeClaims, confidence: confidence as ResearchDossier["confidence"] } };
+  return { dossier: { topic, chosenAngle, evidence, keyFacts, whatIsKnown, whatIsNotKnown, limitations, cautions, safeClaims, confidence: confidence as ResearchDossier["confidence"] } };
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +263,64 @@ const KNOWN_DRUG_OR_METHOD_STEMS: readonly string[] = [
   "транскраниальн", "электромиостимуляц", "детензор", "бальнеотерап", "грязелеч",
 ];
 
+const forbiddenClaimPatterns: Array<[RegExp, string, boolean | "moderate" | "strong"]> = [
+  // [pattern, label, gate: true | "moderate" | "strong"]
+  [/гарантиру[а-яё]*/i, "guarantee language", true],
+  [/излеч[а-яё]*/i, "cure language", true],
+  [/(?:лечит|вылечивает|нормализует)/i, "guaranteed clinical outcome", true],
+  [/(?:лучший|идеальн[а-яё]*|уникальн[а-яё]*)\s+(?:метод|способ|подход|вариант)/i, "marketing superlative", true],
+  // A bare "доказан/доказано" is an absolute assertive claim regardless of
+  // dossier strength: even a moderate dossier warrants hedged clinical
+  // wording, never a flat proof statement.
+  [/доказан[а-яё]*/i, "доказан", true],
+  [/доказали/i, "доказали", "moderate"],
+  [/(?:эффективн[а-яё]*|результативн[а-яё]*|действенн[а-яё]*)\s+(?:метод|способ|лечени[а-яё]*|терапи[а-яё]*|операци[а-яё]*|процедур[а-яё]*)/i, "strong effectiveness claim", "moderate"],
+  [/(?:наиболее|сам[а-яё]*)\s+(?:эффективн[а-яё]*|результативн[а-яё]*)/i, "comparative effectiveness claim", "moderate"],
+  [/(?:доказан[а-яё]*|подтвержд[а-яё]*)\s+(?:эффективност|польз|результат)[а-яё]*/i, "proven effectiveness", "moderate"],
+  [/(?:эффективност|польз|результат)[а-яё]*\s+подтвержд[а-яё]*/i, "proven effectiveness", "moderate"],
+  // Consensus phrasing ("признается эффективным") implies accepted clinical
+  // practice — stronger than any single dossier supports. Name the study
+  // result instead ("в исследовании показано").
+  [/призна(?:[её]тся|н[аоы])\s+(?:эффективн|результативн|действенн)[а-яё]*/i, "consensus effectiveness phrasing", true],
+  // Generalizing a studied intervention into "эффективный метод/способ
+  // лечения/борьбы <нозология>" overstates even a moderate dossier: evidence
+  // covers the studied intervention, not a treatment-of-record.
+  [/(?:эффективн|результативн|действенн)[а-яё]*\s+(?:метод|способ)[а-яё]*\s+(?:лечени[а-яё]*|терапи[а-яё]*|борьбы|снижени[а-яё]*|уменьшени[а-яё]*|устранени[а-яё]*|коррекци[а-яё]*)/i, "treatment-method generalization", "strong"],
+  [/универсальн[а-яё]*\s+(?:метод|способ|подход|средство|лечени[а-яё]*|терапи[а-яё]*)/i, "universal method claim", true],
+  // Universal applicability promise; negated forms ("не подходит всем") stay legitimate.
+  [/(?<!не\s)(?:помогает|поможет|подходит|подойдёт)\s+(?:всем|каждому|каждой)/i, "universal patient applicability", true],
+  // Load-increase imperatives ("постепенно увеличивайте активность") are
+  // prescriptive advice that can harm post-exertional patients; negated
+  // informational forms ("не рекомендуется увеличивать") do not match.
+  [/(?:увеличивайте|увеличьте|наращивайте|занимайтесь\s+больше|тренируйтесь\s+больше)/i, "load-increase imperative", true],
+];
+
+// Shared anti-amplification check over the same pattern table. Used for final
+// copy (validateGeneratedClaims) AND at dossier admission time (safeClaim
+// texts), so an over-broad wording cannot legalize itself later through the
+// whitelist of approved phrases.
+export function findForbiddenAmplifier(cleanText: string, dossierMaxStrength: ClaimStrength): string | null {
+  for (const [pattern, label, gate] of forbiddenClaimPatterns) {
+    if (gate === true) {
+      if (pattern.test(cleanText)) return label;
+      continue;
+    }
+    const minRank = gate === "strong" ? CLAIM_STRENGTH_RANK.strong : CLAIM_STRENGTH_RANK.moderate;
+    if (CLAIM_STRENGTH_RANK[dossierMaxStrength] < minRank && pattern.test(cleanText)) return label;
+  }
+  return null;
+}
+
+// Quantitative grounding: when the dossier rests on a systematic review /
+// meta-analysis / guideline, the site article must carry concrete figures
+// from the evidence (N of trials, effect size, comparator) instead of the
+// vague "исследования показали" template. Telegram copy is exempt (length).
+export function validateQuantitativeCoverage(siteContent: string, dossier: ResearchDossier): GeneratedClaimsValidation {
+  const hasQuantEvidence = dossier.evidence.some((e) => /systematic.?review|meta.?analys|guideline/i.test(String(e.sourceType || "")));
+  if (!hasQuantEvidence || /\d/.test(siteContent)) return { valid: true, text: siteContent };
+  return { valid: false, text: siteContent, reason: "quantitative results of the review not reflected in the article (no figures from the evidence)" };
+}
+
 export function validateGeneratedClaims(text: string, dossier: ResearchDossier): GeneratedClaimsValidation {
   if (!text) return { valid: true, text: "" };
   let cleanText = text;
@@ -272,6 +340,13 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
   // Humanizer is required to return HTML, not residual Markdown.
   // The reason carries the offending fragment so pipeline logs show exactly
   // which construction breaks validation (the attempt loop prefixes the field).
+  // Model-generated links are forbidden: sources are appended by the system,
+  // and model hrefs historically leaked markdown residue (href="[url](url)").
+  // Evidence Contract: reject instead of repair.
+  if (/<a[\s>]/i.test(cleanText)) {
+    return { valid: false, text: cleanText, reason: "Model-generated link detected (sources are appended by the system)" };
+  }
+
   const markdownLeak = cleanText.match(/(?:^|\s)#{1,3}\s|\*\*[^*]+\*\*|(?<!\*)\*[^*\n]+\*(?!\*)/);
   if (markdownLeak) {
     const fragment = markdownLeak[0].trim().replace(/\s+/g, " ").slice(0, 60);
@@ -328,29 +403,9 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
   );
   const allowsClinicalEffectiveness = CLAIM_STRENGTH_RANK[dossierMaxStrength] >= CLAIM_STRENGTH_RANK.moderate;
 
-  const forbiddenClaimPatterns: Array<[RegExp, string, boolean]> = [
-    // [pattern, label, alwaysForbidden]
-    [/гарантиру[а-яё]*/i, "guarantee language", true],
-    [/излеч[а-яё]*/i, "cure language", true],
-    [/(?:лечит|вылечивает|нормализует)/i, "guaranteed clinical outcome", true],
-    [/(?:лучший|идеальн[а-яё]*|уникальн[а-яё]*)\s+(?:метод|способ|подход|вариант)/i, "marketing superlative", true],
-    // A bare "доказан/доказано" is an absolute assertive claim regardless of
-    // dossier strength: even a moderate dossier warrants hedged clinical
-    // wording, never a flat proof statement.
-    [/доказан[а-яё]*/i, "доказан", true],
-    [/доказали/i, "доказали", !allowsClinicalEffectiveness],
-    [/(?:эффективн[а-яё]*|результативн[а-яё]*)\s+(?:метод|способ|лечени[а-яё]*|терапи[а-яё]*|операци[а-яё]*|процедур[а-яё]*)/i, "strong effectiveness claim", !allowsClinicalEffectiveness],
-    [/(?:наиболее|сам[а-яё]*)\s+(?:эффективн[а-яё]*|результативн[а-яё]*)/i, "comparative effectiveness claim", !allowsClinicalEffectiveness],
-    [/(?:доказан[а-яё]*|подтвержд[а-яё]*)\s+(?:эффективност|польз|результат)[а-яё]*/i, "proven effectiveness", !allowsClinicalEffectiveness],
-    [/(?:эффективност|польз|результат)[а-яё]*\s+подтвержд[а-яё]*/i, "proven effectiveness", !allowsClinicalEffectiveness],
-  ];
-  for (const [pattern, label, alwaysForbidden] of forbiddenClaimPatterns) {
-    if (alwaysForbidden && pattern.test(cleanText)) {
-      return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${label}` };
-    }
-    if (!alwaysForbidden && !allowsClinicalEffectiveness && pattern.test(cleanText)) {
-      return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${label}` };
-    }
+  const amplifier = findForbiddenAmplifier(cleanText, dossierMaxStrength);
+  if (amplifier) {
+    return { valid: false, text: cleanText, reason: `Forbidden amplifier detected: ${amplifier}` };
   }
 
   // Evidence-contract grounding: a named drug/method must be grounded in the
@@ -408,6 +463,14 @@ function wordStem(word: string): string {
 
 export function validateTitleAgainstDossier(title: string, dossier: ResearchDossier): GeneratedClaimsValidation {
   const titleLower = title.toLowerCase();
+
+  // Outcome-promise titles ("помогает справиться", "избавит", "вылечит") turn
+  // an evidence summary into a treatment promise. A title must state what the
+  // research shows, not promise a result to the reader.
+  const promiseMatch = titleLower.match(/(?:помогает|поможет|избавит|избавляет|устранит|устраняет|вылечит|справиться|гарантирует)/);
+  if (promiseMatch) {
+    return { valid: false, text: title, reason: `title promises an outcome ("${promiseMatch[0]}") — state what the research shows instead` };
+  }
   const topicLower = `${dossier.topic} ${dossier.chosenAngle}`.toLowerCase();
 
   const topicWords = (topicLower.match(/[а-яёa-z]+/g) ?? [])
@@ -634,6 +697,7 @@ ${evidenceCards(articles)}
 - Для каждого safeClaims.evidenceRefs копируй один или несколько ID ТОЧНО из списка источников выше. Не придумывай PMID или DOI.
 - В этот список уже попали только независимые guideline, systematic review, meta-analysis или RCT. Не повышай силу утверждения сверх источника.
 - Если доказательств недостаточно, topicMatches=false или невозможно создать хотя бы один claim с реальным ID, верни dossier: null.
+- Заполни cautions: клинические предостережения, прямо следующие из источников (нежелательные явления, популяции, где эффект не изучен, ухудшение после нагрузки). Чего нет в abstract — не придумывай; если ничего нет, верни пустой массив.
 - Не используй поле isSufficient: сервер сам применит числовые критерии.
 
 Сформируй JSON БЕЗ КОММЕНТАРИЕВ:
@@ -651,6 +715,7 @@ ${evidenceCards(articles)}
     "whatIsKnown": ["Известно"],
     "whatIsNotKnown": ["Неизвестно"],
     "limitations": ["Ограничения"],
+    "cautions": ["Клинические предостережения из источников: кому осторожно, нежелательные явления, ухудшение после нагрузки — только то, что есть в abstract"],
     "safeClaims": [{
       "text": "Только осторожное утверждение, прямо следующее из источника",
       "strength": "descriptive | suggestive | moderate | strong",
@@ -720,6 +785,8 @@ async function generateScientificDraft(dossier: ResearchDossier): Promise<string
 РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ (используй только их, не добавляй новые медицинские факты):
 ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
 ОГРАНИЧЕНИЯ (их можно упомянуть только как ограничения): ${dossier.limitations.join("; ")}
+КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ (обязательно отрази отдельным абзацем, если список не пуст; факты сверх списка добавлять нельзя): ${(dossier.cautions ?? []).join("; ")}
+Если в разрешённых утверждениях или ограничениях есть численные результаты (число исследований, размер эффекта, доверительный интервал, с чем сравнивали) — включи их в текст дословно.
 
 Не добавляй факты из общих знаний, даже если они кажутся очевидными: диагнозы, препараты, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры и сравнения. Не добавляй авторов, годы, PMID, DOI или ссылки. Не делай сильнее разрешённых утверждений. Формат: обычный текст без библиографии.`;
 
@@ -768,6 +835,9 @@ ${dossier.safeClaims.map((claim) => `- ${claim.text}`).join("\n")}
 5. Тон: спокойный, осторожный, без рекламных обещаний.
 6. Пиши ТОЛЬКО на чистом HTML (без Markdown): каждый абзац заключай в <p>, заголовки — в <h2>. Не используй *, **, [descriptive; PMID:…] или любые служебные метки.
 7. ЗАПРЕЩЕНО добавлять блоки "Литература", "Источники", "Ключевые слова". Система добавит их автоматически.
+8. Если есть КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ — отрази их в статье отдельным абзацем без приукрашивания. Для тем про физическую активность не подавай наращивание нагрузки как универсальную рекомендацию: если в предостережениях есть ухудшение после нагрузки, укажи, что активность подбирается индивидуально.
+9. Численные результаты из разрешённых утверждений (число исследований, размер эффекта, доверительные интервалы, компаратор) включай в текст дословно. Запрещено заменять их общими фразами вроде «исследования показали положительный эффект».
+10. Заголовок — только то, что показали исследования («Что показали исследования…», «Что известно о…»). Обещания результата читателю («помогает справиться», «избавит», «вылечит») запрещены.
 8. Для descriptive-утверждений не используй «широко применяется», «рекомендуется», «снижает риск», «улучшает» или описание механизма. Передавай только осторожный факт из разрешённого утверждения и его ограничения.
 9. Заголовок ([TITLE] и [TG_TITLE]) обязан сохранять предмет темы и её целевую группу. Уточнение внутри группы допустимо («мигрень у женщин» → «мигрень у беременных женщин»), обобщение с потерей группы — нет («мигрень у женщин» → «мигрень у взрослых пациентов» запрещено).
 
@@ -924,7 +994,8 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
         v.valid ? v : { ...v, reason: `${field}: ${v.reason}` };
       titleValidation = withField(combinedTitleValidation(versions.siteTitle || ""), "title");
       excerptValidation = withField(validateGeneratedClaims(versions.siteExcerpt || "", dossier), "excerpt");
-      validation = withField(validateGeneratedClaims(versions.siteContent || "", dossier), "content");
+      const contentBase = withField(validateGeneratedClaims(versions.siteContent || "", dossier), "content");
+      validation = contentBase.valid ? withField(validateQuantitativeCoverage(versions.siteContent || "", dossier), "content") : contentBase;
       telegramValidation = withField(validateGeneratedClaims(versions.telegramPost || "", dossier), "telegramPost");
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
         // Aggregate EVERY failed field: feeding back only the first reason lets
@@ -988,16 +1059,41 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   return { status: "no_suitable_topic" };
 }
 
+// Validates a source URL before it reaches public HTML: deterministically
+// unwraps a markdown wrapper ([url](url) -> url) and accepts only http(s)
+// URLs free of brackets. Returns null when the URL cannot be safely embedded
+// in an href (broken href="[url](url)" was observed in production).
+export function normalizeSourceUrl(raw: string): string | null {
+  let url = (raw || "").trim();
+  const md = url.match(/^\[?\s*(https?:\/\/[^\s\]]+?)\s*\]?\s*\(\s*(https?:\/\/[^\s)]+?)\s*\)$/);
+  if (md) url = md[1];
+  if (/[\[\]]/.test(url)) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 export function generateSourcesBlock(articles: EvidenceItem[]): string {
   if (articles.length === 0) return "";
-  const sources = articles.map(a => {
+  const items = articles.map(a => {
     // Экранируем HTML в данных источника
     const safeTitle = a.title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const safeJournal = (a.journal || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const safeUrl = a.url.replace(/"/g, "&quot;");
+    const safeUrl = normalizeSourceUrl(a.url);
+    if (!safeUrl) {
+      // Evidence Contract: a URL carrying markdown residue or a non-http(s)
+      // scheme must not reach public HTML. Drop the entry loudly.
+      console.error(`[Sources] Invalid source URL for PMID ${a.pmid || "?"}: "${a.url}" — entry dropped`);
+      return "";
+    }
     return `<li><a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeTitle}</a> — ${safeJournal}, ${a.pubDate}</li>`;
-  }).join("");
-  return `\n<h2>Источники</h2>\n<ul>${sources}</ul>`;
+  }).filter(Boolean);
+  if (items.length === 0) return "";
+  return `\n<h2>Источники</h2>\n<ul>${items.join("")}</ul>`;
 }
 
 export async function generateArticleByKeyword(keyword: string): Promise<GenerationResult> {

@@ -32,6 +32,8 @@ export interface ResearchDossier {
   whatIsKnown: string[];
   whatIsNotKnown: string[];
   limitations: string[];
+  /** Clinical cautions extracted from source abstracts (post-exertional worsening, adverse events, unstudied populations). */
+  cautions?: string[];
   safeClaims: SafeClaim[];
   confidence: "high" | "medium" | "low";
 }
