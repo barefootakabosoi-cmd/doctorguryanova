@@ -301,12 +301,16 @@ const forbiddenClaimPatterns: Array<[RegExp, string, boolean | "moderate" | "str
 // whitelist of approved phrases.
 export function findForbiddenAmplifier(cleanText: string, dossierMaxStrength: ClaimStrength): string | null {
   for (const [pattern, label, gate] of forbiddenClaimPatterns) {
-    if (gate === true) {
-      if (pattern.test(cleanText)) return label;
-      continue;
-    }
+    const hit = cleanText.match(pattern);
+    if (!hit) continue;
+    // Retry feedback must quote the offending phrase: a category-only label
+    // told the model WHAT failed but not WHICH wording - observed 3/3
+    // attempts repeating the same amplification even with correction
+    // injected (local E2E 2026-09-23).
+    const frag = hit[0].replace(/\s+/g, " ").trim().slice(0, 60);
+    if (gate === true) return `${label} ("${frag}")`;
     const minRank = gate === "strong" ? CLAIM_STRENGTH_RANK.strong : CLAIM_STRENGTH_RANK.moderate;
-    if (CLAIM_STRENGTH_RANK[dossierMaxStrength] < minRank && pattern.test(cleanText)) return label;
+    if (CLAIM_STRENGTH_RANK[dossierMaxStrength] < minRank) return `${label} ("${frag}")`;
   }
   return null;
 }

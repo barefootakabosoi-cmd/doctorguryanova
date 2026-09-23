@@ -271,3 +271,12 @@ describe("Markdown heading normalization before validation", () => {
     expect(normalizeMarkdownHeadings("# Заголовок")).toContain("<h2>Заголовок</h2>");
   });
 });
+
+describe("Amplifier feedback precision", () => {
+  it("rejection reason quotes the offending fragment (actionable retry feedback)", () => {
+    const v = validateGeneratedClaims("<p>Пейсинг является эффективным методом лечения синдрома хронической усталости.</p>", dossier("moderate"));
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("treatment-method generalization");
+    expect(v.reason).toContain("эффективным методом лечения");
+  });
+});
