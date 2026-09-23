@@ -280,3 +280,52 @@ describe("Amplifier feedback precision", () => {
     expect(v.reason).toContain("эффективным методом лечения");
   });
 });
+
+describe("Clinical-caution grounding (production regression draft-1790183786671)", () => {
+  it("rejects a fabricated caution section when dossier.cautions is empty", () => {
+    const v = validateGeneratedClaims("<h2>Клинические предостережения</h2><p>Перед началом занятий состояние оценивается в общем порядке.</p>", dossier("moderate"));
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Fabricated clinical caution");
+  });
+
+  it("rejects the prescriptive consultation phrase without any caution section", () => {
+    const v = validateGeneratedClaims("<p>Начинать занятия следует исключительно после консультации врача, который оценит риски.</p>", dossier("moderate"));
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Fabricated clinical caution");
+  });
+
+  it("does not reject the bare word врач in a legitimate descriptive context", () => {
+    const v = validateGeneratedClaims("<p>Авторы отмечают, что вмешательство не оценивало роль лечащего врача.</p>", dossier("moderate"));
+    expect(v.valid).toBe(true);
+  });
+
+  it("allows a caution section when the dossier carries cautions", () => {
+    const d = { ...dossier("moderate"), cautions: ["ухудшение состояния после нагрузки"] };
+    const v = validateGeneratedClaims("<h2>Клинические предостережения</h2><p>При ухудшении состояния после нагрузки активность подбирается индивидуально.</p>", d);
+    expect(v.valid).toBe(true);
+  });
+});
+
+describe("Measured-outcome terminology and universalization", () => {
+  const distressDossier = {
+    ...dossier("moderate"),
+    safeClaims: [{ text: "Пейсинг активности снижал усталость и психологический дистресс в исследованиях", strength: "moderate" as ClaimStrength, evidenceRefs: ["PMID:36345726"] }],
+  };
+
+  it("rejects colloquial remapping of a measured outcome", () => {
+    const v = validateGeneratedClaims("<p>Программы способствовали снижению усталости и эмоционального напряжения.</p>", distressDossier);
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Measured outcome remapped");
+  });
+
+  it("passes when the article preserves the source terminology", () => {
+    const v = validateGeneratedClaims("<p>Программы способствовали снижению усталости и психологического дистресса.</p>", distressDossier);
+    expect(v.valid).toBe(true);
+  });
+
+  it("rejects universal physical-activity recommendation for a pacing dossier", () => {
+    const v = validateGeneratedClaims("<p>Для улучшения состояния пациентам часто рекомендуют физическую активность.</p>", dossier("moderate"));
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Universal");
+  });
+});

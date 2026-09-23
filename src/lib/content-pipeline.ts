@@ -445,6 +445,47 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
     }
   }
 
+  // Evidence-contract grounding for clinical cautions: the article may carry a
+  // caution section ONLY from dossier.cautions. When the dossier lists none,
+  // any generated safety paragraph is a fabricated medical recommendation —
+  // production E2E (draft-1790183786671) produced exactly such a block
+  // ("Клинические предостережения" + "следует исключительно после консультации
+  // врача") out of the medical topic itself. The gate targets the prescriptive
+  // construction, NOT the bare word "врач" (legitimate descriptive contexts
+  // stay allowed). Cyrillic-aware classes: \\w does not match Cyrillic.
+  const dossierCautions = dossier.cautions ?? [];
+  if (dossierCautions.length === 0) {
+    const fabricatedCaution = cleanText.match(
+      /<h[2-6][^>]*>[^<]*(?:предостережени|медицинские рекомендации|меры предосторожности)|после\s+консультац[а-яё]*\s+(?:с\s+)?врач|обращ[а-яё]*\s+(?:к\s+)?врач|обратит[а-яё]*\s+(?:к\s+)?врач|рекомендуется\s+пройти|следует\s+исключительно|начин[а-яё]*\s+занятия\s+следует/i
+    );
+    if (fabricatedCaution) {
+      const fragment = fabricatedCaution[0].trim().replace(/\s+/g, " ").slice(0, 60);
+      return { valid: false, text: cleanText, reason: `Fabricated clinical caution (dossier.cautions is empty): "${fragment}"` };
+    }
+  }
+
+  // Measured-outcome terminology: a measured outcome named in the dossier must
+  // not be remapped to a colloquial synonym in the article ("психологический
+  // дистресс" -> "эмоциональное напряжение" — production E2E,
+  // draft-1790183786671). The reader must see the outcome the source measured.
+  const OUTCOME_REMAPS: ReadonlyArray<{ colloquial: RegExp; canonical: RegExp; label: string }> = [
+    { colloquial: /эмоциональн[а-яё]*\s+напряжени[а-яё]*/i, canonical: /дистресс/i, label: "«эмоциональное напряжение» (в досье: дистресс)" },
+  ];
+  for (const remap of OUTCOME_REMAPS) {
+    if (remap.colloquial.test(cleanText) && remap.canonical.test(approvedVocabulary) && !remap.canonical.test(lowerText)) {
+      return { valid: false, text: cleanText, reason: `Measured outcome remapped: ${remap.label}` };
+    }
+  }
+
+  // Universal-recommendation generalization: a specific dossier intervention
+  // (activity pacing) must not be widened into generic physical-activity
+  // advice ("физическую активность часто рекомендуют" — production E2E,
+  // draft-1790183786671): that changes the meaning of the study.
+  const dossierIsPacing = ["пейсинг", "планирован", "pacing"].some((st) => approvedVocabulary.includes(st));
+  if (dossierIsPacing && /рекоменд(?:уют|ует|уется)\s+(?:[а-яё]+\s+){0,2}физическ[а-яё]*/i.test(cleanText)) {
+    return { valid: false, text: cleanText, reason: "Universal physical-activity recommendation replaces the dossier's specific intervention" };
+  }
+
   // Очищаем пустые теги
   cleanText = cleanText.replace(/<p>\s*<\/p>/gi, "");
   cleanText = cleanText.replace(/<li>\s*<\/li>/gi, "");
@@ -845,7 +886,7 @@ async function generateScientificDraft(dossier: ResearchDossier): Promise<string
 РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ (используй только их, не добавляй новые медицинские факты):
 ${dossier.safeClaims.map((claim) => `- [${claim.strength}; ${claim.evidenceRefs.join(", ")}] ${claim.text}`).join("\n")}
 ОГРАНИЧЕНИЯ (их можно упомянуть только как ограничения): ${dossier.limitations.join("; ")}
-КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ (обязательно отрази отдельным абзацем, если список не пуст; факты сверх списка добавлять нельзя): ${(dossier.cautions ?? []).join("; ")}
+${(dossier.cautions ?? []).length > 0 ? `КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ (обязательно отрази отдельным абзацем; факты сверх списка добавлять нельзя): ${(dossier.cautions ?? []).join("; ")}` : "КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ: в досье их нет — раздел предостережений, медицинские рекомендации и призывы консультироваться с врачом НЕ создавать."}
 Если в разрешённых утверждениях или ограничениях есть численные результаты (число исследований, размер эффекта, доверительный интервал, с чем сравнивали) — включи их в текст дословно.
 
 Не добавляй факты из общих знаний, даже если они кажутся очевидными: диагнозы, препараты, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры и сравнения. Не добавляй авторов, годы, PMID, DOI или ссылки. Не делай сильнее разрешённых утверждений. Формат: обычный текст без библиографии.`;
@@ -884,6 +925,7 @@ async function humanizeDraft(
 ${dossier.safeClaims.map((claim) => `- ${claim.text}`).join("\n")}
 ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}${correction}
 НЕ ИЗУЧЕНО ПО ИСТОЧНИКУ (утверждать улучшение этих исходов ЗАПРЕЩЕНО): ${dossier.whatIsNotKnown.join("; ")}
+${(dossier.cautions ?? []).length === 0 ? "ЖЁСТКОЕ УСЛОВИЕ: в досье НЕТ клинических предостережений (cautions пуст). НЕ создавай раздел «Клинические предостережения» и не добавляй медицинских предостережений, обязательных рекомендаций, призывов консультироваться с врачом или проходить обследование — этого нет в досье." : `КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ ДОСЬЕ (отрази отдельным абзацем, только эти, без приукрашивания): ${(dossier.cautions ?? []).join("; ")}`}
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
 1. Используй только утверждения из списка выше и не усиливай их. Черновик — лишь материал для редакторской переработки: игнорируй любой факт из него, которого нет в разрешённых утверждениях или ограничениях.
 2. Не добавляй факты из общих знаний: диагнозы, препараты, операции, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры, сравнения, авторов, годы, PMID, DOI и ссылки.
@@ -900,6 +942,7 @@ ${dossier.safeClaims.map((claim) => `- ${claim.text}`).join("\n")}
 9. Численные результаты из разрешённых утверждений (число исследований, размер эффекта, доверительные интервалы, компаратор) включай в текст дословно. Запрещено заменять их общими фразами вроде «исследования показали положительный эффект».
    Обязательно: числа (число исследований, размер эффекта, доверительные интервалы, компаратор) переноси дословно из разрешённых утверждений досье, не перефразируй в общие слова.
    Обязательно: заголовки разделов — только HTML-теги <h2>/<h3>; Markdown-разметка (###, **жирный**, [текст](url)) запрещена во всех полях вывода.
+   Обязательно: сохраняй названия измеренных исходов дословно («психологический дистресс» — не «эмоциональное напряжение»). Не универсализируй вмешательство: если в досье конкретный метод (планирование активности/pacing), не заменяй его общей рекомендацией вроде «физическую активность часто рекомендуют».
 10. Заголовок — только то, что показали исследования («Что показали исследования…», «Что известно о…»). Обещания результата читателю («помогает справиться», «избавит», «вылечит») запрещены.
 11. Для descriptive-утверждений не используй «широко применяется», «рекомендуется», «снижает риск», «улучшает» или описание механизма. Передавай только осторожный факт из разрешённого утверждения и его ограничения.
    Запрещены формулировки консенсуса — «признан/признано эффективным», «считается эффективным», «признанный подход»: они звучат как принятая клиническая практика, а не результат конкретного исследования. Формулируй через источник: «в исследованиях показано снижение усталости», «в систематическом обзоре сообщалось об уменьшении симптомов».
