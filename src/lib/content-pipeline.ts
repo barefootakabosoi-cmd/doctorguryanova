@@ -587,7 +587,9 @@ export function markdownToHtml(md: string): string {
   // Заголовки (4+ решёток сворачиваем в h3 — модель иногда шлёт ####)
   html = html.replace(/^#{4,} (.+)$/gm, "<h3>$1</h3>");
   html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
-  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+  // ##/###/#### headings normalized deterministically (humanizer kept emitting "###"
+  // despite prompt rules — local E2E, 2026-09-23); plain-text copy never carries them.
+  html = html.replace(/^#{2,4} (.+)$/gm, "<h2>$1</h2>");
   html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
 
   // Bold/Italic
@@ -747,15 +749,42 @@ ${evidenceCards(articles)}
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (jsonMatch) rawText = jsonMatch[0];
 
-    // ЖЁСТКАЯ ОЧИСТКА JSON: вырезаем комментарии (// ...), меняем одинарные кавычки, убираем trailing commas, чиним Python Booleans
+    // ЖЁСТКАЯ ОЧИСТКА JSON: вырезаем комментарии, убираем trailing commas, чиним Python Booleans.
+    // Одинарные кавычки меняем ТОЛЬКО вне строковых литералов: слепое .replace(/'/g,'"')
+    // рвало валидные ответы на апострофах внутри значений (Hedges' g -> Hedges" g ->
+    // "Unexpected token g") — production E2E, PMID 36345726, 2026-09-23.
     rawText = rawText.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '') // comments
-                     .replace(/'/g, '"') // single quotes
                      .replace(/,\s*([}\]])/g, '$1') // trailing commas
                      .replace(/\bTrue\b/g, 'true')
                      .replace(/\bFalse\b/g, 'false')
                      .replace(/\bNone\b/g, 'null');
 
-    const parsed = JSON.parse(rawText);
+    // Fast path: the model already returned valid JSON — do not "repair" it.
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      const direct: unknown = JSON.parse(rawText);
+      if (direct !== null && typeof direct === "object") {
+        parsed = direct as Record<string, unknown>;
+      }
+    } catch {
+      parsed = null;
+    }
+    if (!parsed) {
+      // Repair path: swap single-quoted delimiters to doubles while leaving
+      // apostrophes INSIDE string values (Hedges' g) untouched.
+      const repaired = rawText.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, (m: string) =>
+        m.startsWith('"') ? m : m.replace(/^'/, '"').replace(/'$/, '"')
+      )
+                     .replace(/,\s*([}\]])/g, '$1')
+                     .replace(/\bTrue\b/g, 'true')
+                     .replace(/\bFalse\b/g, 'false')
+                     .replace(/\bNone\b/g, 'null');
+      const repairedParsed: unknown = JSON.parse(repaired);
+      if (repairedParsed === null || typeof repairedParsed !== "object") {
+        throw new Error("ScienceGate response is not a JSON object");
+      }
+      parsed = repairedParsed as Record<string, unknown>;
+    }
 
     // Server-owned decision: never infer success from the model's prose reason.
     const highQuality = Number(parsed.highQuality) || 0;
@@ -777,7 +806,9 @@ ${evidenceCards(articles)}
       }
       return { isSufficient: true, dossier: parsedDossier.dossier };
     } else {
-      return { isSufficient: false, reason: parsed.reason || "insufficient evidence" };
+      const modelReason: unknown = parsed.reason;
+      const reason = typeof modelReason === "string" && modelReason.trim() ? modelReason : "insufficient evidence";
+      return { isSufficient: false, reason };
     }
   } catch (e) {
     console.error(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} Error:`, e);
