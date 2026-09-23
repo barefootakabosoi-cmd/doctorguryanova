@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { validateGeneratedClaims, validateTitleAgainstDossier, generateSourcesBlock, normalizeSourceUrl } from "../src/lib/content-pipeline";
+import { validateGeneratedClaims, normalizeModelClosingTags, validateTitleAgainstDossier, generateSourcesBlock, normalizeSourceUrl } from "../src/lib/content-pipeline";
 import { ResearchDossier, EvidenceItem, ClaimStrength } from "../src/lib/research-dossier";
 
 vi.mock("sanitize-html", () => {
@@ -234,5 +234,21 @@ describe("Quantitative gate: cleaned vs raw input (production bypass regression)
     expect(claims.valid).toBe(true);
     const gate = validateQuantitativeCoverage(claims.text || raw, quantDossier());
     expect(gate.valid).toBe(true);
+  });
+});
+
+describe("Model tag normalization + groundedness prompt", () => {
+  it("normalizes mis-slashed closing tags and rescues CONTENT", () => {
+    const raw = "[CONTENT]<h2>Введение</h2><p>Текст.</p>/[CONTENT][TG_POST]Суть. Подробнее:[/TG_POST]";
+    expect(normalizeModelClosingTags(raw)).toContain("[/CONTENT]");
+    expect(normalizeModelClosingTags(raw)).not.toContain("/[CONTENT]");
+    // rescued: extract() can now find the closing tag
+    const m = normalizeModelClosingTags(raw).match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
+    expect(m ? m[1] : "").toContain("<h2>Введение</h2>");
+  });
+
+  it("does not touch already-correct tags", () => {
+    expect(normalizeModelClosingTags("[/TG_POST]")).toBe("[/TG_POST]");
+    expect(normalizeModelClosingTags("путь /п/home")).toBe("путь /п/home"); // non-tag slash preserved
   });
 });
