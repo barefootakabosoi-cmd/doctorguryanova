@@ -534,6 +534,11 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
   const validPmids = dossier.evidence.map(e => e.pmid).filter(Boolean) as string[];
   const validDois = dossier.evidence.map(e => e.doi).filter(Boolean) as string[];
 
+  // Metacharacter-safe interpolation: matched reference strings are fed into
+  // new RegExp below. Legacy DOIs contain parentheses/colons/plus signs
+  // (10.1002/(SICI)...) that throw on construction or silently alter the
+  // pattern. Escape before interpolation.
+  const escapeRe = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // Ищем PMID (обычно 7-8 цифр)
   const pmidMatches = cleanText.match(/PMID:?\s*\d{7,8}/gi) || [];
   for (const match of pmidMatches) {
@@ -541,8 +546,8 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
     if (!pmidInnerMatch) continue;
     const pmid = pmidInnerMatch[0];
     if (!validPmids.includes(pmid)) {
-      cleanText = cleanText.replace(new RegExp(`<p>[^<]*${match}[^<]*<\/p>`, "gi"), "");
-      cleanText = cleanText.replace(new RegExp(`[^.]*${match}[^.]*\.`, "gi"), "");
+      cleanText = cleanText.replace(new RegExp(`<p>[^<]*${escapeRe(match)}[^<]*<\/p>`, "gi"), "");
+      cleanText = cleanText.replace(new RegExp(`[^.]*${escapeRe(match)}[^.]*\.`, "gi"), "");
     }
   }
 
@@ -551,8 +556,8 @@ export function validateAndCleanOutput(text: string, dossier: ResearchDossier): 
   for (const match of doiMatches) {
     const doi = match.replace(/\.$/, "");
     if (!validDois.some(d => doi.includes(d))) {
-      cleanText = cleanText.replace(new RegExp(`<p>[^<]*${match}[^<]*<\/p>`, "gi"), "");
-      cleanText = cleanText.replace(new RegExp(`[^.]*${match}[^.]*\.`, "gi"), "");
+      cleanText = cleanText.replace(new RegExp(`<p>[^<]*${escapeRe(match)}[^<]*<\/p>`, "gi"), "");
+      cleanText = cleanText.replace(new RegExp(`[^.]*${escapeRe(match)}[^.]*\.`, "gi"), "");
     }
   }
 
