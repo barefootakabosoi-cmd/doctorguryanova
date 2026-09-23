@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createDossierFromScienceGateResponse, filterEligibleEvidence, filterEvidenceForAutomaticPublication, generateArticle, maximumClaimStrength, validateGeneratedClaims, validateTitleAgainstDossier, evidenceUsedByClaims, markdownToHtml, stripResidualMarkdown, sanitizeBadEncoding } from "../src/lib/content-pipeline";
+import type { EvidenceItem } from "../src/lib/research-dossier";
 import { getRandomCluster } from "../src/lib/seo-keywords";
 import { chatCompletion } from "../src/lib/gigachat";
 
@@ -205,6 +206,33 @@ describe("Evidence Contract v5 boundary", () => {
     }, evidence);
     expect(result.dossier).toBeUndefined();
     expect(result.reason).toMatch(/evidence/);
+  });
+
+  const evTyped: EvidenceItem[] = [{
+    title: "Test", authors: [], journal: "J", pubDate: "2024", abstract: "A", url: "https://example.test", pmid: "123", sourceType: "rct",
+  }];
+
+  it("normalizes claim-vocabulary confidence labels instead of rejecting the dossier (production CFS case)", () => {
+    const result = createDossierFromScienceGateResponse("Topic", {
+      chosenAngle: "Angle", keyFacts: ["KF"], whatIsKnown: ["K"], whatIsNotKnown: ["N"], limitations: ["L"],
+      safeClaims: [{ text: "Claim", strength: "descriptive", evidenceRefs: ["PMID:123"] }], confidence: "moderate",
+    }, evTyped);
+    expect(result.reason).toBeUndefined();
+    expect(result.dossier?.confidence).toBe("medium");
+  });
+
+  it("normalizes 'strong' confidence to high and still rejects unknown labels", () => {
+    const strong = createDossierFromScienceGateResponse("Topic", {
+      chosenAngle: "Angle", keyFacts: ["KF"], whatIsKnown: ["K"], whatIsNotKnown: ["N"], limitations: ["L"],
+      safeClaims: [{ text: "Claim", strength: "descriptive", evidenceRefs: ["PMID:123"] }], confidence: "strong",
+    }, evTyped);
+    expect(strong.dossier?.confidence).toBe("high");
+    const unknown = createDossierFromScienceGateResponse("Topic", {
+      chosenAngle: "Angle", keyFacts: ["KF"], whatIsKnown: ["K"], whatIsNotKnown: ["N"], limitations: ["L"],
+      safeClaims: [{ text: "Claim", strength: "descriptive", evidenceRefs: ["PMID:123"] }], confidence: "conclusive",
+    }, evTyped);
+    expect(unknown.dossier).toBeUndefined();
+    expect(unknown.reason).toMatch(/malformed/);
   });
 
   it("preserves HTML content and stores the validated Telegram text", async () => {

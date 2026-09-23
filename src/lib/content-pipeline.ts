@@ -200,8 +200,30 @@ export function createDossierFromScienceGateResponse(
   // Clinical cautions extracted from source abstracts (e.g. post-exertional
   // exacerbation): optional, dossiers without the field get an empty list.
   const cautions = cleanArray(value.cautions) ?? [];
-  const confidence = value.confidence;
-  if (!keyFacts || !whatIsKnown || !whatIsNotKnown || !limitations || !["high", "medium", "low"].includes(String(confidence))) {
+  // GigaChat occasionally fills `confidence` with a word from the claim-strength
+  // vocabulary it also sees in the prompt ("moderate", "strong"), instead of the
+  // high|medium|low enum the schema declares. Mirrors the claim-strength cap
+  // above: a relabel by the model is not a reason to discard an otherwise
+  // source-bound dossier. Unknown or missing values still fail closed.
+  const CONFIDENCE_ALIASES: Record<string, ResearchDossier["confidence"]> = {
+    descriptive: "low",
+    suggestive: "medium",
+    moderate: "medium",
+    strong: "high",
+  };
+  let confidence: ResearchDossier["confidence"] | undefined;
+  const rawConfidence = value.confidence;
+  if (typeof rawConfidence === "string" && ["high", "medium", "low"].includes(rawConfidence)) {
+    confidence = rawConfidence as ResearchDossier["confidence"];
+  } else {
+    const aliasKey = typeof rawConfidence === "string" ? rawConfidence : "";
+    const aliased = Object.prototype.hasOwnProperty.call(CONFIDENCE_ALIASES, aliasKey) ? CONFIDENCE_ALIASES[aliasKey] : undefined;
+    if (aliased) {
+      confidence = aliased;
+      console.warn(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} Dossier confidence normalized: ${rawConfidence} -> ${aliased}`);
+    }
+  }
+  if (!keyFacts || !whatIsKnown || !whatIsNotKnown || !limitations || !confidence) {
     return { reason: "malformed dossier fields" };
   }
   const chosenAngle = cleanText(value.chosenAngle);
