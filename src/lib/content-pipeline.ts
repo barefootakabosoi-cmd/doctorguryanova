@@ -326,6 +326,18 @@ export function validateQuantitativeCoverage(siteContent: string, dossier: Resea
   return { valid: false, text: siteContent, reason: "quantitative results of the review not reflected in the article (no figures from the evidence)" };
 }
 
+// Deterministic structural repair: the humanizer keeps emitting Markdown
+// headings despite prompt rules (local E2E 2026-09-23: 2/3 attempts died on
+// "###"). Headings carry no clinical meaning, so they are normalized BEFORE
+// validation instead of sinking whole attempts; bold/italic markdown changes
+// emphasis semantics and stays the validator's backstop.
+export function normalizeMarkdownHeadings(text: string): string {
+  return text
+    .replace(/^#{4,} (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^#{2,4} (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h2>$1</h2>");
+}
+
 export function validateGeneratedClaims(text: string, dossier: ResearchDossier): GeneratedClaimsValidation {
   if (!text) return { valid: true, text: "" };
   let cleanText = text;
@@ -1042,7 +1054,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
         v.valid ? v : { ...v, reason: `${field}: ${v.reason}` };
       titleValidation = withField(combinedTitleValidation(versions.siteTitle || ""), "title");
       excerptValidation = withField(validateGeneratedClaims(versions.siteExcerpt || "", dossier), "excerpt");
-      const contentBase = withField(validateGeneratedClaims(versions.siteContent || "", dossier), "content");
+      const contentBase = withField(validateGeneratedClaims(normalizeMarkdownHeadings(versions.siteContent || ""), dossier), "content");
       // Quantitative gate MUST see the cleaned copy: validateGeneratedClaims
       // strips the model-emitted bibliography tail and [n] markers, while the
       // gate previously received the RAW string - years inside the tail

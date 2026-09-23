@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { validateGeneratedClaims, normalizeModelClosingTags, validateTitleAgainstDossier, generateSourcesBlock, normalizeSourceUrl } from "../src/lib/content-pipeline";
+import { validateGeneratedClaims, normalizeModelClosingTags, validateTitleAgainstDossier, generateSourcesBlock, normalizeSourceUrl, normalizeMarkdownHeadings } from "../src/lib/content-pipeline";
 import { ResearchDossier, EvidenceItem, ClaimStrength } from "../src/lib/research-dossier";
 
 vi.mock("sanitize-html", () => {
@@ -250,5 +250,24 @@ describe("Model tag normalization + groundedness prompt", () => {
   it("does not touch already-correct tags", () => {
     expect(normalizeModelClosingTags("[/TG_POST]")).toBe("[/TG_POST]");
     expect(normalizeModelClosingTags("путь /п/home")).toBe("путь /п/home"); // non-tag slash preserved
+  });
+});
+
+describe("Markdown heading normalization before validation", () => {
+  it("converts ### headings so content is not rejected (local E2E regression)", () => {
+    const raw = "### Как проявляется\n<p>В исследовании показано снижение усталости.</p>";
+    const v = validateGeneratedClaims(normalizeMarkdownHeadings(raw), dossier("moderate"));
+    expect(v.valid).toBe(true);
+    expect(v.text).toContain("<h2>Как проявляется</h2>");
+  });
+
+  it("backstop intact: ** bold markdown still rejected after normalization", () => {
+    const v = validateGeneratedClaims(normalizeMarkdownHeadings("<p>Это **жирный** текст.</p>"), dossier("moderate"));
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Markdown leaked");
+  });
+
+  it("single # heading converts to h2", () => {
+    expect(normalizeMarkdownHeadings("# Заголовок")).toContain("<h2>Заголовок</h2>");
   });
 });
