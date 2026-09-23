@@ -294,6 +294,12 @@ describe("Clinical-caution grounding (production regression draft-1790183786671)
     expect(v.reason).toContain("Fabricated clinical caution");
   });
 
+  it("rejects the exact production evasion: modal + консультация специалиста", () => {
+    const v = validateGeneratedClaims("<p>Однако перед началом любых изменений в режиме физической активности необходима консультация специалиста.</p>", dossier("moderate"));
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Fabricated clinical caution");
+  });
+
   it("does not reject the bare word врач in a legitimate descriptive context", () => {
     const v = validateGeneratedClaims("<p>Авторы отмечают, что вмешательство не оценивало роль лечащего врача.</p>", dossier("moderate"));
     expect(v.valid).toBe(true);
