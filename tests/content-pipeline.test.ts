@@ -59,7 +59,9 @@ describe("Pipeline Evidence-Locked v4", () => {
   });
 
   const mockDraft = (text: string) => ({ choices: [{ message: { content: text } }] });
-  const mockHumanizer = (content: string) => ({ choices: [{ message: { content: `[CONTENT]\n${content}\n[/CONTENT]` } }] });
+  // Full five-section contract: an empty TG_POST/CONTENT must REJECT the attempt
+  // (no silent empties), so every mock now carries both sections.
+  const mockHumanizer = (content: string, tg = "Краткий осторожный вывод. Подробнее на сайте.") => ({ choices: [{ message: { content: `[CONTENT]\n${content}\n[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]\n${tg}\n[/TG_POST]` } }] });
 
   it("Test 1: FAIL -> Regeneration -> PASS", async () => {
     mockChat.mockReset();
@@ -185,7 +187,9 @@ describe("Evidence Contract v5 boundary", () => {
     }) } }],
   });
   const mockDraft = (text: string) => ({ choices: [{ message: { content: text } }] });
-  const mockHumanizer = (content: string) => ({ choices: [{ message: { content: `[CONTENT]\n${content}\n[/CONTENT]` } }] });
+  // Full five-section contract: an empty TG_POST/CONTENT must REJECT the attempt
+  // (no silent empties), so every mock now carries both sections.
+  const mockHumanizer = (content: string, tg = "Краткий осторожный вывод. Подробнее на сайте.") => ({ choices: [{ message: { content: `[CONTENT]\n${content}\n[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]\n${tg}\n[/TG_POST]` } }] });
   const evidence = [{
     title: "Test", journal: "J", pubDate: "2024", abstract: "A", url: "https://example.test", pmid: "123", sourceType: "rct" as const,
   }];
@@ -240,8 +244,8 @@ describe("Evidence Contract v5 boundary", () => {
     mockChat.mockResolvedValueOnce(mockScienceGatePass("HTML topic"));
     mockChat.mockResolvedValueOnce(mockDraft("Draft"));
     // First Telegram version is rejected; a full humanizer regeneration must follow.
-    mockChat.mockResolvedValueOnce(mockHumanizer(`<h2>Что показало исследование</h2><p>Текст.</p>\n[/CONTENT]\n[TG_POST]\nBapat et al. (1998) сообщили о результате. Подробнее на сайте.\n[/TG_POST]`));
-    mockChat.mockResolvedValueOnce(mockHumanizer(`<h2>Что показало исследование</h2><p>Текст.</p>\n[/CONTENT]\n[TG_POST]\nКраткий осторожный вывод. Подробнее на сайте.\n[/TG_POST]`));
+    mockChat.mockResolvedValueOnce(mockHumanizer(`<h2>Что показало исследование</h2><p>Текст.</p>`, "Bapat et al. (1998) сообщили о результате. Подробнее на сайте."));
+    mockChat.mockResolvedValueOnce(mockHumanizer(`<h2>Что показало исследование</h2><p>Текст.</p>`));
 
     const result = await generateArticle("HTML topic");
     expect(result.status).toBe("success");
@@ -368,8 +372,8 @@ describe("Humanizer repair loop", () => {
     }) } }] };
     mockChat.mockResolvedValueOnce(science);
     mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "Draft" } }] });
-    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]<p>Это эффективный метод лечения.</p>[/CONTENT]" } }] });
-    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]<p>Осторожный вывод.</p>[/CONTENT]" } }] });
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]<p>Это эффективный метод лечения.</p>[/CONTENT]\n[TG_POST]Пост[/TG_POST]" } }] });
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]<p>Осторожный вывод.</p>[/CONTENT]\n[TG_POST]Пост[/TG_POST]" } }] });
 
     const result = await generateArticle("Topic");
     expect(result.status).toBe("success");
@@ -480,7 +484,7 @@ describe("Attempt tagging and evidence trace in logs", () => {
     }) } }],
   });
   const draftText = (t: string) => ({ choices: [{ message: { content: t } }] });
-  const humanized = (c: string) => ({ choices: [{ message: { content: `[CONTENT]\n${c}\n[/CONTENT]` } }] });
+  const humanized = (c: string, tg = "Краткий осторожный вывод. Подробнее на сайте.") => ({ choices: [{ message: { content: `[CONTENT]\n${c}\n[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]\n${tg}\n[/TG_POST]` } }] });
   it("separates pipeline attempts in logs so evidence cannot be mixed visually", async () => {
     mockChat.mockReset();
     mockChat.mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
@@ -569,5 +573,85 @@ describe("Attempt tagging and evidence trace in logs", () => {
     expect(result.valid).toBe(false);
     expect(result.reason).toContain("Markdown leaked");
     expect(result.reason).toContain("##");
+  });
+});
+
+describe("Spaced closing tags and empty sections (local E2E 2026-09-24 regression)", () => {
+  const gatePass = (topic: string) => ({
+    choices: [{ message: { content: JSON.stringify({
+      topicMatches: true, relevantSources: 1, highQuality: 1, mediumQuality: 0, clinicalCases: 0,
+      isSufficient: true, reason: "Relevant RCT found",
+      dossier: {
+        chosenAngle: topic, keyFacts: ["Fact"], whatIsKnown: ["Known"], whatIsNotKnown: ["Unknown"], limitations: ["L1"],
+        safeClaims: [{ text: "В исследовании показано снижение усталости", strength: "descriptive", evidenceRefs: ["PMID:123"] }],
+        confidence: "high",
+      },
+    }) } }],
+  });
+  const draftText = (t: string) => ({ choices: [{ message: { content: t } }] });
+  const humanizer = (content: string, tg = "Краткий осторожный вывод. Подробнее на сайте.") => ({
+    choices: [{ message: { content: `[CONTENT]\n${content}\n[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]\n${tg}\n[/TG_POST]` } }],
+  });
+
+  it("repairs '[ / CONTENT ]' spaced closers and publishes the humanized copy, never the raw draft", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(gatePass("Topic"));
+    mockChat.mockResolvedValueOnce(draftText("СЫРОЙ ЧЕРНОВИК 12345"));
+    // Third corruption form: spaces around the slash in BOTH closers.
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]\n<h2>Что показало исследование</h2><p>Текст.</p>\n[ / CONTENT ]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]\nКраткий осторожный вывод. Подробнее на сайте.\n[ / TG_POST ]" } }] });
+
+    const result = await generateArticle("Topic");
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content.post.content).toContain("<h2>Что показало исследование</h2>");
+      // The raw pre-humanizer draft must never be published (old <p>${draft}</p> fallback removed).
+      expect(result.content.post.content).not.toContain("СЫРОЙ ЧЕРНОВИК 12345");
+      expect(result.content.telegramPost).toContain("Краткий осторожный вывод");
+    }
+    expect(mockChat).toHaveBeenCalledTimes(3);
+  });
+
+  it("empty CONTENT section rejects the attempt, names the field in feedback, and never publishes the raw draft", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(gatePass("Topic"));
+    mockChat.mockResolvedValueOnce(draftText("СЫРОЙ ЧЕРНОВИК 12345"));
+    // Whitespace-only CONTENT: the tag survived, the section did not.
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]   \n[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]\nПост[/TG_POST]" } }] });
+    mockChat.mockResolvedValueOnce(humanizer("<p>Осторожный вывод по теме.</p>"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const result = await generateArticle("Topic");
+      expect(result.status).toBe("success");
+      if (result.status === "success") {
+        expect(result.content.post.content).not.toContain("СЫРОЙ ЧЕРНОВИК 12345");
+        expect(result.content.post.content).toContain("Осторожный вывод по теме");
+      }
+      expect(mockChat).toHaveBeenCalledTimes(4);
+      const retryPrompt = mockChat.mock.calls[3][0].messages[0].content as string;
+      expect(retryPrompt).toContain("ПРЕДЫДУЩАЯ ВЕРСИЯ БЫЛА ОТКЛОНЕНА");
+      expect(retryPrompt).toContain("no CONTENT section");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("empty TG_POST section rejects the attempt too (no silent empties)", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(gatePass("Topic"));
+    mockChat.mockResolvedValueOnce(draftText("Draft"));
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[CONTENT]\n<p>Осторожный вывод.</p>\n[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]   [/TG_POST]" } }] });
+    mockChat.mockResolvedValueOnce(humanizer("<p>Осторожный вывод.</p>"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const result = await generateArticle("Topic");
+      expect(result.status).toBe("success");
+      expect(mockChat).toHaveBeenCalledTimes(4);
+      const retryPrompt = mockChat.mock.calls[3][0].messages[0].content as string;
+      expect(retryPrompt).toContain("no TG_POST section");
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

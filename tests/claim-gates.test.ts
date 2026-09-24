@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { validateGeneratedClaims, normalizeModelClosingTags, validateTitleAgainstDossier, generateSourcesBlock, normalizeSourceUrl, normalizeMarkdownHeadings } from "../src/lib/content-pipeline";
+import { validateGeneratedClaims, normalizeModelClosingTags, validateTitleAgainstDossier, generateSourcesBlock, normalizeSourceUrl, normalizeMarkdownHeadings, unwrapLatexDelimiters } from "../src/lib/content-pipeline";
 import { ResearchDossier, EvidenceItem, ClaimStrength } from "../src/lib/research-dossier";
 
 vi.mock("sanitize-html", () => {
@@ -333,5 +333,52 @@ describe("Measured-outcome terminology and universalization", () => {
     const v = validateGeneratedClaims("<p>Для улучшения состояния пациентам часто рекомендуют физическую активность.</p>", dossier("moderate"));
     expect(v.valid).toBe(false);
     expect(v.reason).toContain("Universal");
+  });
+});
+
+describe("Spaced closers and LaTeX unwrap (local E2E 2026-09-24 regression)", () => {
+  it("repairs spaced closers '[ / TAG ]' so extract() finds the section", () => {
+    const raw = "[CONTENT]<p>Текст.</p>[ / CONTENT][TG_POST]Суть.[ / TG_POST ]";
+    const fixed = normalizeModelClosingTags(raw);
+    expect(fixed).toContain("[/CONTENT]");
+    expect(fixed).toContain("[/TG_POST]");
+    const m = fixed.match(/\[CONTENT\]([\s\S]*?)\[\/CONTENT\]/i);
+    expect(m ? m[1] : "").toContain("<p>Текст.</p>");
+  });
+
+  it("LaTeX unwrap strips delimiters but keeps the figures in visible text", () => {
+    const raw = "<p>Эффект составил $-0.52$ $(95\\%\\ CI: -0.73\\ldots-0.32)$ по сравнению с контролем.</p>";
+    const cleaned = unwrapLatexDelimiters(raw);
+    expect(cleaned).not.toContain("$");
+    expect(cleaned).not.toContain("\\");
+    expect(cleaned).toContain("-0.52");
+    expect(cleaned).toContain("95% CI");
+    expect(cleaned).toContain("-0.73…-0.32");
+  });
+
+  it("unwrapped copy passes the claim gate (figures reach validation)", () => {
+    const cleaned = unwrapLatexDelimiters("<p>Метаанализ показал эффект $-0.52$ против контроля.</p>");
+    const v = validateGeneratedClaims(cleaned, dossier("moderate"));
+    expect(v.valid).toBe(true);
+    expect(v.text).toContain("-0.52");
+  });
+
+  it("rejects feminine-past proof bypass ('доказала свою эффективность')", () => {
+    const v = validateGeneratedClaims("<p>Методика доказала свою эффективность при усталости.</p>", dossier("moderate"));
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("proven effectiveness");
+  });
+
+  it("threshold semantics: 'подтверждает эффективность' fires below moderate, passes at moderate", () => {
+    const phrase = "<p>Подход подтверждает эффективность данного метода.</p>";
+    // Below the pattern's moderate gate the violation fires and is named:
+    const weak = validateGeneratedClaims(phrase, dossier("descriptive"));
+    expect(weak.valid).toBe(false);
+    expect(weak.reason).toContain("proven effectiveness");
+    // At moderate the dossier rank satisfies the gate: legal pass BY DESIGN
+    // (the production E2E phrase). Whether moderate should also be rejected
+    // is a policy decision for the physician, not a code defect.
+    const atGate = validateGeneratedClaims(phrase, dossier("moderate"));
+    expect(atGate.valid).toBe(true);
   });
 });

@@ -299,6 +299,10 @@ const forbiddenClaimPatterns: Array<[RegExp, string, boolean | "moderate" | "str
   [/(?:эффективн[а-яё]*|результативн[а-яё]*|действенн[а-яё]*)\s+(?:метод|способ|лечени[а-яё]*|терапи[а-яё]*|операци[а-яё]*|процедур[а-яё]*)/i, "strong effectiveness claim", "moderate"],
   [/(?:наиболее|сам[а-яё]*)\s+(?:эффективн[а-яё]*|результативн[а-яё]*)/i, "comparative effectiveness claim", "moderate"],
   [/(?:доказан[а-яё]*|подтвержд[а-яё]*)\s+(?:эффективност|польз|результат)[а-яё]*/i, "proven effectiveness", "moderate"],
+  // Feminine-past/infinitive bypass ("доказала свою эффективность" — local
+  // E2E 2026-09-24, excerpt): the "доказан" stem misses "доказала/доказать".
+  // Method-as-subject proof wording stays an absolute claim: fail closed.
+  [/доказа(?:ла|ть)\s+(?:сво[юя]\s+)?(?:эффективност|польз|результат)/i, "proven effectiveness", true],
   [/(?:эффективност|польз|результат)[а-яё]*\s+подтвержд[а-яё]*/i, "proven effectiveness", "moderate"],
   // Consensus phrasing ("признается эффективным") implies accepted clinical
   // practice — stronger than any single dossier supports. Name the study
@@ -362,6 +366,19 @@ export function normalizeMarkdownHeadings(text: string): string {
     .replace(/^#{4,} (.+)$/gm, "<h3>$1</h3>")
     .replace(/^#{2,4} (.+)$/gm, "<h2>$1</h2>")
     .replace(/^# (.+)$/gm, "<h2>$1</h2>");
+}
+
+// LaTeX delimiters from the model ("$-0.52$", "$(95\%\ CI...)$" — local E2E
+// 2026-09-24) are markup around real figures, not content: unwrap
+// deterministically so the saved article carries plain figures.
+// Formatting-only: no words added or removed; text without a closing
+// delimiter is left untouched.
+export function unwrapLatexDelimiters(text: string): string {
+  return text
+    .replace(/\\ldots/g, "…")
+    .replace(/\\%/g, "%")
+    .replace(/\\([,;!\s])/g, "$1")
+    .replace(/\$\s*([^$]{1,200}?)\s*\$/g, "$1");
 }
 
 export function validateGeneratedClaims(text: string, dossier: ResearchDossier): GeneratedClaimsValidation {
@@ -1008,6 +1025,12 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   // Deterministic character-level cleanup: the model sometimes emits U+FFFD
   // ("ко<FFFD>гнитивно"). Formatting only — no words are added or removed.
   rawText = sanitizeBadEncoding(rawText);
+  // Closing-tag repair for the HUMANIZER response too: "[ / CONTENT ]" (the
+  // third corruption form, local E2E 2026-09-24) defeated extract()'s exact
+  // match, silently emptying sections. The normalizer existed but was wired
+  // only into the ScienceGate path - the one place the corruption had NOT
+  // been observed. Deterministic structural repair, not content substitution.
+  rawText = normalizeModelClosingTags(rawText);
   // Preserve HTML for [CONTENT]; a plain version is for logs only.
   const plainRawText = rawText.replace(/<[^>]+>/g, '');
   console.log("[Humanizer] GigaChat raw response:", plainRawText);
@@ -1025,7 +1048,11 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   siteTitle = siteTitle.charAt(0).toUpperCase() + siteTitle.slice(1);
 
   let siteExcerpt = stripResidualMarkdown(extract("EXCERPT") || "Профессиональный разбор темы");
-  let siteContent = markdownToHtml(extract("CONTENT")) || `<p>${draft}</p>`;
+  // No raw-draft fallback: the un-humanized draft bypasses the humanizer
+  // contract (LaTeX figures and a Markdown heading inside <p> reached the
+  // saved article that way — local E2E 2026-09-24). A missing CONTENT
+  // section must fail the attempt (retry/PIVOT), never substitute the draft.
+  let siteContent = markdownToHtml(unwrapLatexDelimiters(extract("CONTENT")));
   let telegramTitle = stripResidualMarkdown(extract("TG_TITLE") || siteTitle);
   let telegramPost = stripResidualMarkdown(extract("TG_POST").replace(/\[\/?TG_POST\]/g, '').trim());
   if (!telegramPost) {
@@ -1033,10 +1060,11 @@ HTML-статья для сайта. Структура: <h2>Введение</h
     const tgFallback = rawText.match(/\[TG_POST\]([\s\S]*?)(?:\[\/?[A-Z_]+\]|$)/i);
     telegramPost = tgFallback ? tgFallback[1].trim() : "";
   }
-  // Если TG-пост пустой, используем описание статьи (лучше, чем заглушка)
-  if (!telegramPost) {
-    telegramPost = siteExcerpt || "Профессиональный разбор темы. Подробнее на сайте:";
-  }
+  // No silent substitution: an empty TG_POST must REJECT the attempt (retry
+  // with the named field), not quietly ship the site excerpt as the Telegram
+  // post - same silent-substitution class as the removed raw-draft fallback
+  // (local E2E 2026-09-24). tgFallback above stays: it repairs a corrupted
+  // closer, it never invents content.
 
   return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
 }
@@ -1107,6 +1135,10 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     let previousHumanizerFailure: string | undefined;
     const maxHumanizerAttempts = 3;
 
+    // A missing section must REJECT the attempt: validateGeneratedClaims("")
+    // is vacuously valid, so an empty CONTENT/TG_POST used to pass silently
+    // once its tag was corrupted. Evidence Contract: no silent empties.
+    const emptySectionReject = (reason: string): GeneratedClaimsValidation => ({ valid: false, text: "", reason });
     // Title gets two gates: the generic claim validator and the dedicated
     // topic-consistency check (subject survival + audience preservation).
     const combinedTitleValidation = (titleText: string): GeneratedClaimsValidation => {
@@ -1124,7 +1156,12 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
         v.valid ? v : { ...v, reason: `${field}: ${v.reason}` };
       titleValidation = withField(combinedTitleValidation(versions.siteTitle || ""), "title");
       excerptValidation = withField(validateGeneratedClaims(versions.siteExcerpt || "", dossier), "excerpt");
-      const contentBase = withField(validateGeneratedClaims(normalizeMarkdownHeadings(versions.siteContent || ""), dossier), "content");
+      const contentBase = withField(
+        (versions.siteContent || "").trim()
+          ? validateGeneratedClaims(normalizeMarkdownHeadings(versions.siteContent || ""), dossier)
+          : emptySectionReject("Humanizer returned no CONTENT section (raw-draft fallback removed)"),
+        "content"
+      );
       // Quantitative gate MUST see the cleaned copy: validateGeneratedClaims
       // strips the model-emitted bibliography tail and [n] markers, while the
       // gate previously received the RAW string - years inside the tail
@@ -1132,7 +1169,12 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       // zero figures from the meta-analysis (production E2E,
       // draft-1790100173338). Gate the copy that will actually be saved.
       validation = contentBase.valid ? withField(validateQuantitativeCoverage(contentBase.text || "", dossier), "content") : contentBase;
-      telegramValidation = withField(validateGeneratedClaims(versions.telegramPost || "", dossier), "telegramPost");
+      telegramValidation = withField(
+        (versions.telegramPost || "").trim()
+          ? validateGeneratedClaims(versions.telegramPost || "", dossier)
+          : emptySectionReject("Humanizer returned no TG_POST section"),
+        "telegramPost"
+      );
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {
         // Aggregate EVERY failed field: feeding back only the first reason lets
         // the model fix one field and regress another (observed whack-a-mole:
@@ -1219,7 +1261,12 @@ export function normalizeSourceUrl(raw: string): string | null {
 // drops the entire article to the raw-draft fallback. Deterministic
 // structural repair, not content editing.
 export function normalizeModelClosingTags(raw: string): string {
-  return raw.replace(/\/\[(TITLE|EXCERPT|CONTENT|TG_TITLE|TG_POST)\]/g, "[/$1]");
+  return raw
+    .replace(/\/\[(TITLE|EXCERPT|CONTENT|TG_TITLE|TG_POST)\]/g, "[/$1]")
+    // Spaced closer "[ / CONTENT ]" (local E2E 2026-09-24): spaces around the
+    // slash defeat extract()'s exact-tag match. Deterministic structural
+    // repair; the already-correct form is rewritten to itself, harmlessly.
+    .replace(/\[\s*\/\s*(TITLE|EXCERPT|CONTENT|TG_TITLE|TG_POST)\s*\]/g, "[/$1]");
 }
 
 export function generateSourcesBlock(articles: EvidenceItem[]): string {
