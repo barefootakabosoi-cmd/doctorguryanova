@@ -382,3 +382,36 @@ describe("Spaced closers and LaTeX unwrap (local E2E 2026-09-24 regression)", ()
     expect(atGate.valid).toBe(true);
   });
 });
+
+describe("Comparative inefficacy grounding (production E2E v5: 'традиционные методы недостаточно эффективны')", () => {
+  const minimal = {
+    topic: "Синдром хронической усталости", chosenAngle: "Пейсинг активности при СХУ",
+    keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], cautions: [], confidence: "medium" as const,
+    safeClaims: [{ text: "В систематическом обзоре показано снижение усталости при пейсинге активности", strength: "moderate" as const, evidenceRefs: ["PMID:36345726"] }],
+    evidence: [{ title: "R", journal: "J", pubDate: "2022", abstract: "Systematic review.", url: "https://e.test/r", pmid: "36345726", sourceType: "systematic_review" as const, authors: ["R. Author"] }],
+  };
+  it("rejects the exact production phrase when the dossier never mentions those methods", () => {
+    const v = validateGeneratedClaims("<p>Традиционные методы лечения зачастую оказываются недостаточно эффективными.</p>", minimal);
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Comparative inefficacy");
+    expect(v.reason).toContain("Традиционные методы");
+  });
+  it("allows the same construction when the dossier itself discusses those methods", () => {
+    const grounded = { ...minimal, limitations: ["Традиционные методы терапии при СХУ изучены недостаточно"] };
+    const v = validateGeneratedClaims("<p>Традиционные методы лечения зачастую оказываются недостаточно эффективными.</p>", grounded);
+    expect(v.valid).toBe(true);
+  });
+  it("does not reject the conditional frame 'при неэффективности консервативной терапии' (limitation language)", () => {
+    const v = validateGeneratedClaims("<p>При неэффективности консервативной терапии тактика пересматривается.</p>", minimal);
+    expect(v.valid).toBe(true);
+  });
+  it("rejects the bare short-form assertion 'традиционные методы неэффективны'", () => {
+    const v = validateGeneratedClaims("<p>Традиционные методы лечения неэффективны.</p>", minimal);
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("Comparative inefficacy");
+  });
+  it("does not reject a neutral descriptive mention without negative qualification", () => {
+    const v = validateGeneratedClaims("<p>В обзоре сопоставлялись традиционные методы лечения.</p>", minimal);
+    expect(v.valid).toBe(true);
+  });
+});

@@ -80,6 +80,41 @@ describe("Pipeline Evidence-Locked v4", () => {
     expect(mockChat).toHaveBeenCalledTimes(4);
   });
 
+  it("Test 1b: fabricated caution section -> REJECT -> retry -> clean article (caution gate wired into attempt loop)", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Test Topic Caution"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft C"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>В обзоре показано снижение усталости.</p><h2>Клинические предостережения</h2><p>Начинать занятия следует исключительно после консультации врача.</p>"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>В обзоре показано снижение усталости.</p>"));
+
+    const result = await generateArticle("Test Topic Caution");
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content.post.content).not.toContain("консультации врача");
+      expect(result.content.post.content).toContain("снижение усталости");
+    }
+    expect(mockChat).toHaveBeenCalledTimes(4);
+  });
+
+  it("Test 1c: amplifier in EXCERPT -> REJECT -> retry (claims outside CONTENT are enforced, not logged)", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Test Topic Excerpt"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft E"));
+    const humanizerWithExcerpt = (excerpt: string) => ({ choices: [{ message: { content: `[EXCERPT]${excerpt}[/EXCERPT]\n[CONTENT]\n<p>В обзоре показано снижение усталости.</p>\n[/CONTENT]\n[TG_TITLE]TG[/TG_TITLE]\n[TG_POST]\nВ обзоре показано снижение усталости.\n[/TG_POST]` } }] });
+    mockChat.mockResolvedValueOnce(humanizerWithExcerpt("Метод признан эффективным способом борьбы с усталостью."));
+    mockChat.mockResolvedValueOnce(humanizerWithExcerpt("В обзоре показано снижение усталости."));
+
+    const result = await generateArticle("Test Topic Excerpt");
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content.post.excerpt).not.toContain("эффективным способом");
+      expect(result.content.post.excerpt).toContain("снижение усталости");
+    }
+    expect(mockChat).toHaveBeenCalledTimes(4);
+  });
+
   it("author/year check: PMID inside parentheses is NOT a citation, a real year is", () => {
     const dossier = {
       topic: "Topic", chosenAngle: "Angle", keyFacts: [], whatIsKnown: [], whatIsNotKnown: [], limitations: [], confidence: "medium" as const,

@@ -525,6 +525,27 @@ export function validateGeneratedClaims(text: string, dossier: ResearchDossier):
     return { valid: false, text: cleanText, reason: "Universal physical-activity recommendation replaces the dossier's specific intervention" };
   }
 
+  // Comparative inefficacy claims: asserting that established/traditional
+  // treatments are ineffective ("Традиционные методы лечения зачастую
+  // оказываются недостаточно эффективными" — production E2E v5, CFS topic)
+  // is a comparative claim about a subject the dossier may never mention:
+  // the study measured one intervention, not the inferiority of others.
+  // Grounded ONLY when the dossier itself discusses those methods (mirror of
+  // the fabricated-caution gate: the construction is targeted, not the bare
+  // word — descriptive mentions without a negative qualification stay legal).
+  const COMPARATIVE_STEMS = ["традиционн", "существующ", "консервативн", "стандартн"];
+  const comparativeSubject = cleanText.match(
+    new RegExp("(?:" + COMPARATIVE_STEMS.join("|") + ")[а-яё]*(?:\\s+[а-яё]+){0,2}\\s+(?:метод|подход|терапи|средств)[а-яё]*", "i")
+  );
+  if (comparativeSubject) {
+    const subjectInDossier = COMPARATIVE_STEMS.some((st) => approvedVocabulary.includes(st));
+    const negativeEfficacy = /недостаточно\s+эффективн|неэффективн(?!ост)|малоэффективн|уступа[а-яё]*|проигрыв[а-яё]*/i.test(cleanText);
+    if (!subjectInDossier && negativeEfficacy) {
+      const fragment = comparativeSubject[0].trim().replace(/\s+/g, " ").slice(0, 60);
+      return { valid: false, text: cleanText, reason: `Comparative inefficacy claim about methods absent from the dossier: "${fragment}"` };
+    }
+  }
+
   // Очищаем пустые теги
   cleanText = cleanText.replace(/<p>\s*<\/p>/gi, "");
   cleanText = cleanText.replace(/<li>\s*<\/li>/gi, "");
@@ -967,7 +988,7 @@ ${dossier.safeClaims.map((claim) => `- ${claim.text}`).join("\n")}
 ${(dossier.cautions ?? []).length === 0 ? "ЖЁСТКОЕ УСЛОВИЕ: в досье НЕТ клинических предостережений (cautions пуст). НЕ создавай раздел «Клинические предостережения» и не добавляй медицинских предостережений, обязательных рекомендаций, призывов консультироваться с врачом или проходить обследование — этого нет в досье." : `КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ ДОСЬЕ (отрази отдельным абзацем, только эти, без приукрашивания): ${(dossier.cautions ?? []).join("; ")}`}
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
 1. Используй только утверждения из списка выше и не усиливай их. Черновик — лишь материал для редакторской переработки: игнорируй любой факт из него, которого нет в разрешённых утверждениях или ограничениях.
-2. Не добавляй факты из общих знаний: диагнозы, препараты, операции, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры, сравнения, авторов, годы, PMID, DOI и ссылки.
+2. Не добавляй факты из общих знаний: диагнозы, препараты, операции, процедуры, механизмы, показания, противопоказания, побочные эффекты, цифры, сравнения, авторов, годы, PMID, DOI и ссылки. Не утверждай ничего о методах лечения, не названных в досье: ни позитивного, ни негативного — включая «традиционные/существующие методы недостаточно эффективны»: об эффективности других методов досье ничего не сообщает.
 3. Никогда не пиши «гарантирует», «лечит», «излечивает», «нормализует», «лучший метод», «уникальный метод». ${
   allowsClinicalEffectiveness
     ? "В этом досье есть клинически значимое утверждение уровня moderate и выше: аккуратная клиническая формулировка разрешена, например «когнитивно-поведенческая терапия рассматривается в клинических рекомендациях как терапия первой линии при хронической бессоннице». Но не пиши «доказано», «доказанная эффективность», «эффективный метод», «наиболее эффективный» и не обещай результат конкретному пациенту."
