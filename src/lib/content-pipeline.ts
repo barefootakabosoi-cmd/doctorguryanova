@@ -940,7 +940,8 @@ ${evidenceCards(articles)}
     }
   } catch (e) {
     console.error(`[ScienceGate]${attemptId ? ` [${attemptId}]` : ""} Error:`, e);
-    return { isSufficient: false, reason: "evaluation error" };
+    const detail = e instanceof Error ? e.message : String(e);
+    return { isSufficient: false, reason: `evaluation error: ${detail.slice(0, 160)}` };
   }
 }
 
@@ -1115,11 +1116,17 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
     const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
     const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
-    const allArticles = filterEvidenceForAutomaticPublication(currentTopic, [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[]);
+    const combinedEvidence = [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[];
+    const allArticles = filterEvidenceForAutomaticPublication(currentTopic, combinedEvidence);
     console.log(`[Pipeline] [${attemptId}] Trusted evidence eligible for publication: ${allArticles.length} [${evidenceIds(allArticles)}]`);
 
     if (allArticles.length === 0) {
-      const reason = `no trusted evidence (query: "${pubmedQuery}" -> pubmed ${rawPubmed.length}, crossref ${crossrefArticles.length})`;
+      // Diagnosable breakdown for the prod response body: hygiene-excluded
+      // (no abstract/case report/product) vs not-trusted-design (real studies
+      // whose title does not declare a synthesis/RCT design).
+      const hygieneExcluded = combinedEvidence.length - filterEligibleEvidence(currentTopic, combinedEvidence).length;
+      const notTrustedDesign = combinedEvidence.length - hygieneExcluded - allArticles.length;
+      const reason = `no trusted evidence (query: "${pubmedQuery}" -> raw pubmed ${rawPubmed.length} + crossref ${crossrefArticles.length}; hygiene-excluded ${hygieneExcluded}, not-trusted-design ${notTrustedDesign})`;
       attemptReasons.push(`${attemptId}: ${reason}`);
       console.log(`[Pipeline] [${attemptId}] PIVOT. Reason: ${reason}.`);
       let nextCluster = getRandomCluster();
@@ -1223,6 +1230,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       // rejected, never substituted with generated filler. PIVOT to another
       // evidence-eligible topic instead of publishing an angle-less shell.
       console.warn(`[Pipeline] [${attemptId}] Humanizer failed after max attempts (${previousHumanizerFailure ?? "unknown reason"}); PIVOT.`);
+      attemptReasons.push(`${attemptId}: humanizer validation failed after ${maxHumanizerAttempts} attempts (${previousHumanizerFailure ?? "unknown"})`);
       let nextCluster = getRandomCluster();
       let safetyCounter = 0;
       while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
