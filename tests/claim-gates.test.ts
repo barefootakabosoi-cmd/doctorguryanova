@@ -401,6 +401,23 @@ describe("Comparative inefficacy grounding (production E2E v5: 'традицио
     const v = validateGeneratedClaims("<p>Традиционные методы лечения зачастую оказываются недостаточно эффективными.</p>", grounded);
     expect(v.valid).toBe(true);
   });
+  it("rejects the demonstrative amplifier 'демонстрирует свою эффективность' even with a moderate dossier (E2E v8: заключение)", () => {
+    const v = validateGeneratedClaims(
+      "<p>Активное планирование активности демонстрирует свою эффективность в облегчении симптомов СХУ.</p>",
+      dossier("moderate")
+    );
+    expect(v.valid).toBe(false);
+    expect(v.reason).toContain("proven effectiveness");
+  });
+
+  it("does not reject neutral outcome wording ('в исследовании показано')", () => {
+    const v = validateGeneratedClaims(
+      "<p>В исследовании показано снижение усталости (Hedges' g -0.52).</p>",
+      dossier("moderate")
+    );
+    expect(v.valid).toBe(true);
+  });
+
   it("does not reject the conditional frame 'при неэффективности консервативной терапии' (limitation language)", () => {
     const v = validateGeneratedClaims("<p>При неэффективности консервативной терапии тактика пересматривается.</p>", minimal);
     expect(v.valid).toBe(true);

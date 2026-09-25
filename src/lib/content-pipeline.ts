@@ -304,6 +304,11 @@ const forbiddenClaimPatterns: Array<[RegExp, string, boolean | "moderate" | "str
   // Method-as-subject proof wording stays an absolute claim: fail closed.
   [/доказа(?:ла|ть)\s+(?:сво[юя]\s+)?(?:эффективност|польз|результат)/i, "proven effectiveness", true],
   [/(?:эффективност|польз|результат)[а-яё]*\s+подтвержд[а-яё]*/i, "proven effectiveness", "moderate"],
+  // Demonstrative bypass ("демонстрирует свою эффективность" — E2E 2026-09-25,
+  // заключение при досье, доказывающем только снижение исходов): "демонстрир"
+  // stem absent from amplifier list. Method-as-subject demonstration wording
+  // is the same absolute-claim family as "доказала свою": fail closed.
+  [/демонстрир[а-яё]*\s+(?:сво[юя]\s+)?(?:эффективност|польз|результат)/i, "proven effectiveness", true],
   // Consensus phrasing ("признается эффективным") implies accepted clinical
   // practice — stronger than any single dossier supports. Name the study
   // result instead ("в исследовании показано").
