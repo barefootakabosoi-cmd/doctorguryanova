@@ -42,7 +42,12 @@ export async function POST(req: NextRequest) {
 
     const result = await generateArticle(generatedTopic, cluster);
     if (result.status === "no_suitable_topic") {
-      return NextResponse.json({ success: false, error: "no_suitable_topic" }, { status: 200 });
+      return NextResponse.json({
+        success: false,
+        error: "no_suitable_topic",
+        failureReason: result.failureReason ?? null,
+        lastAttemptId: result.lastAttemptId ?? null,
+      }, { status: 200 });
     }
     const generated = result.content;
 

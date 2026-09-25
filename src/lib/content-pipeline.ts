@@ -815,7 +815,7 @@ function slugify(text: string): string {
 
 export type GenerationResult =
   | { status: "success"; content: GeneratedContent }
-  | { status: "no_suitable_topic" };
+  | { status: "no_suitable_topic"; failureReason?: string; lastAttemptId?: string };
 
 // SCIENCE GATE
 async function evaluateEvidence(topic: string, articles: EvidenceItem[], attemptId?: string): Promise<{ isSufficient: boolean; dossier?: ResearchDossier; reason?: string }> {
@@ -1099,6 +1099,7 @@ HTML-статья для сайта. Структура: <h2>Введение</h
 export async function generateArticle(topic: string, cluster?: KeywordCluster): Promise<GenerationResult> {
   const maxAttempts = 3;
   let lastAttemptId = "";
+  const attemptReasons: string[] = [];
   let currentTopic = topic;
   // Если кластер не передан явно (например, генерация по свободному topic),
   // резолвим его из SEO-словаря: без него PubMed ищет по сырому русскому тексту
@@ -1118,6 +1119,9 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     console.log(`[Pipeline] [${attemptId}] Trusted evidence eligible for publication: ${allArticles.length} [${evidenceIds(allArticles)}]`);
 
     if (allArticles.length === 0) {
+      const reason = `no trusted evidence (query: "${pubmedQuery}" -> pubmed ${rawPubmed.length}, crossref ${crossrefArticles.length})`;
+      attemptReasons.push(`${attemptId}: ${reason}`);
+      console.log(`[Pipeline] [${attemptId}] PIVOT. Reason: ${reason}.`);
       let nextCluster = getRandomCluster();
       let safetyCounter = 0;
       while (attemptedTopics.has(nextCluster.primary) && safetyCounter < 10) {
@@ -1133,6 +1137,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     const { isSufficient, dossier, reason } = await evaluateEvidence(currentTopic, allArticles, attemptId);
 
     if (!isSufficient || !dossier) {
+      attemptReasons.push(`${attemptId}: ${reason}`);
       console.log(`[Pipeline] [${attemptId}] PIVOT. Reason: ${reason}.`);
       let nextCluster = getRandomCluster();
       let safetyCounter = 0;
@@ -1259,8 +1264,9 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     };
   }
 
-  console.log(`[Pipeline] Failed to find sufficient evidence after max attempts${lastAttemptId ? ` (last: ${lastAttemptId})` : ""}. No draft created.`);
-  return { status: "no_suitable_topic" };
+  const failureReason = attemptReasons.join(" | ") || "no reasons recorded";
+  console.log(`[Pipeline] Failed to find sufficient evidence after max attempts${lastAttemptId ? ` (last: ${lastAttemptId})` : ""}. Reasons: ${failureReason}. No draft created.`);
+  return { status: "no_suitable_topic", lastAttemptId: lastAttemptId || undefined, failureReason };
 }
 
 // Validates a source URL before it reaches public HTML: deterministically

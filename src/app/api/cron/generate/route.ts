@@ -24,7 +24,13 @@ export async function GET(req: Request) {
     const cluster = getRandomCluster();
     const result = await generateArticle(cluster.primary, cluster);
     if (result.status === "no_suitable_topic") {
-      return NextResponse.json({ success: true, status: "no_suitable_topic" });
+      // Diagnostics: return why every attempt pivoted (previously console-only).
+      return NextResponse.json({
+        success: true,
+        status: "no_suitable_topic",
+        failureReason: result.failureReason ?? null,
+        lastAttemptId: result.lastAttemptId ?? null,
+      });
     }
     const generated = result.content;
 
