@@ -181,6 +181,34 @@ describe("Pipeline Evidence-Locked v4", () => {
     }
   });
 
+  it("PIVOT never redraws the just-failed initial topic (attemptedTopics seeded)", async () => {
+    mockChat.mockReset();
+    // attempt-1: empty PubMed -> no trusted evidence -> PIVOT
+    const { getPubMedArticles } = await import("../src/lib/pubmed");
+    vi.mocked(getPubMedArticles).mockResolvedValueOnce([]);
+    // redraw queue: first draw returns the SAME topic that just failed
+    // (the old bug accepted it because the set was still empty),
+    // second draw = a fresh topic.
+    vi.mocked(getRandomCluster)
+      .mockReturnValueOnce({ primary: "Initial Topic", pubmedQuery: "Same Query", secondary: [], longtail: [] })
+      .mockReturnValueOnce({ primary: "Pivoted Topic", pubmedQuery: "Pivoted Query", secondary: [], longtail: [] });
+    // attempt-2: default pubmed mock (valid RCT) -> full pass
+    mockChat.mockResolvedValueOnce(mockScienceGatePass("Pivoted Topic"));
+    mockChat.mockResolvedValueOnce(mockDraft("Draft"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это безопасный вывод по новой теме.</p>"));
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = await generateArticle("Initial Topic");
+      expect(result.status).toBe("success");
+      const attempt2 = logSpy.mock.calls.map(([m]) => String(m)).filter((m) => m.includes("Attempt 2:")).join("\n");
+      expect(attempt2).toContain("Pivoted Topic");
+      expect(attempt2).not.toContain("Initial Topic");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it("Test 2: Humanizer FAIL x3 -> PIVOT to a new topic (no filler substitution)", async () => {
     mockChat.mockReset();
     vi.mocked(getRandomCluster).mockReturnValue({ primary: "Pivoted Topic", pubmedQuery: "Pivoted Query", secondary: [], longtail: [] });
@@ -582,7 +610,7 @@ describe("Attempt tagging and evidence trace in logs", () => {
 
     const result = await generateArticle("бессонница лечение");
     expect(result.status).toBe("success");
-    expect(mockPubmed).toHaveBeenCalledWith("insomnia treatment non-pharmacological", 5);
+    expect(mockPubmed).toHaveBeenCalledWith("insomnia treatment non-pharmacological", 8);
   });
 
   it("stripResidualMarkdown removes markers without touching words", () => {

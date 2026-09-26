@@ -1043,8 +1043,19 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   const result = await chatCompletion({
     messages: [{ role: "user", content: prompt }],
     temperature: 0.5, // Баланс между точностью и живостью
-    max_tokens: 2500,
+    // Prod E2E: 2500 tokens cut the five-section response right after
+    // EXCERPT - CONTENT and TG_POST arrived empty on ALL THREE humanizer
+    // attempts (failureReason: "no CONTENT section"). 4096 covers the full
+    // HTML article with headroom; the server cap stays authoritative.
+    max_tokens: 4096,
   });
+
+  // Truncation telemetry: a cut response yields empty later sections and a
+  // (correct) empty-section reject - but the cause must be visible in logs,
+  // not a mystery.
+  if (result.choices?.[0]?.finish_reason === "length") {
+    console.warn("[Humanizer] Response truncated (finish_reason=length): later sections will be empty; attempt will reject.");
+  }
 
   let rawText = result.choices[0]?.message?.content ?? "";
   // Вырезаем возможные Markdown code-blocks (```)
@@ -1107,6 +1118,11 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
   // и гарантированно получает 0 статей.
   let currentCluster = cluster ?? getClusterByKeyword(topic);
   const attemptedTopics = new Set<string>(); // Запоминаем темы, которые уже пробовали
+  // Seed the INITIAL topic before the first PIVOT: otherwise the redraw can
+  // legally pick the just-failed topic (the set was still empty). Prod E2E:
+  // attempt-1 and attempt-2 ran the SAME query ("cervical osteochondrosis
+  // treatment") - one of three attempts was wasted deterministically.
+  attemptedTopics.add(currentTopic);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const attemptId = `attempt-${attempt + 1}`;
@@ -1114,9 +1130,13 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     console.log(`[Pipeline] [${attemptId}] Attempt ${attempt + 1}: ${currentTopic}`);
 
     const pubmedQuery = currentCluster?.pubmedQuery || currentTopic;
-    const rawPubmed = await getPubMedArticles(pubmedQuery, 5);
-    const crossrefArticles = await searchCrossRef(pubmedQuery, 3);
-    const combinedEvidence = [...rawPubmed, ...crossrefArticles].slice(0, 7) as EvidenceItem[];
+    // Prod E2E: a 5+3 pool capped at 7 left zero eligible records for
+    // case-report-heavy queries ("cervical osteochondrosis treatment": all
+    // 7 hygiene-excluded). Widen the pool so hygiene+trust filters keep
+    // actual study designs after exclusion.
+    const rawPubmed = await getPubMedArticles(pubmedQuery, 8);
+    const crossrefArticles = await searchCrossRef(pubmedQuery, 5);
+    const combinedEvidence = [...rawPubmed, ...crossrefArticles].slice(0, 10) as EvidenceItem[];
     const allArticles = filterEvidenceForAutomaticPublication(currentTopic, combinedEvidence);
     console.log(`[Pipeline] [${attemptId}] Trusted evidence eligible for publication: ${allArticles.length} [${evidenceIds(allArticles)}]`);
 
