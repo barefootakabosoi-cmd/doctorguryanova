@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          KV_REST_API_URL: https://ci-placeholder.upstash.io
+          KV_REST_API_TOKEN: ci-placeholder
+          TELEGRAM_BOT_TOKEN: ci-placeholder
+          TELEGRAM_CHAT_ID: "0"
+          GIGACHAT_KEY: ci-placeholder
+          YOOKASSA_SHOP_ID: ci-placeholder
+          YOOKASSA_SECRET_KEY: ci-placeholder
