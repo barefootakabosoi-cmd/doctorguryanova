@@ -181,6 +181,48 @@ describe("Pipeline Evidence-Locked v4", () => {
     }
   });
 
+  it("normalizeModelClosingTags repairs the [CONTENT END] closer form", async () => {
+    const { normalizeModelClosingTags } = await import("../src/lib/content-pipeline");
+    const raw = "[TITLE]T[/TITLE]\n[CONTENT]<p>Текст</p>[CONTENT END]";
+    const fixed = normalizeModelClosingTags(raw);
+    expect(fixed).toContain("[/CONTENT]");
+    expect(fixed).not.toContain("CONTENT END");
+  });
+
+  it("dossier retry fires once for 'missing safe claims' before PIVOT", async () => {
+    mockChat.mockReset();
+    // NOTE: no getRandomCluster mock here - a topic-call does not draw a
+    // cluster on attempt-1, and an unconsumed mockReturnValueOnce leaks into
+    // the PIVOT-rotation test below (real isolation bug caught by that test).
+    // ScienceGate envelope matching mockScienceGatePass; safeClaims [] ->
+    // "missing safe claims" (retryable). Refs must match the PubMed mock (pmid 123).
+    const gateWith = (safeClaims: unknown[]) => JSON.stringify({
+      topicMatches: true, relevantSources: 3, highQuality: 1, mediumQuality: 0,
+      clinicalCases: 0, isSufficient: true, reason: "Relevant RCT found",
+      dossier: {
+        chosenAngle: "Тема ретрая досье",
+        keyFacts: ["Факт 1"], whatIsKnown: ["Известно"], whatIsNotKnown: ["Не изучено"],
+        limitations: ["Ограничение"], safeClaims, confidence: "medium",
+      },
+    });
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: gateWith([]) } }] }); // gate: missing safe claims
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: gateWith([{ text: "В исследованиях показано снижение усталости.", strength: "descriptive", evidenceRefs: ["PMID:123"] }]) } }] }); // dossier retry
+    mockChat.mockResolvedValueOnce(mockDraft("Draft"));
+    mockChat.mockResolvedValueOnce(mockHumanizer("<p>Это безопасный вывод по теме.</p>"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = await generateArticle("Тема ретрая досье");
+      expect(result.status).toBe("success");
+      const warns = warnSpy.mock.calls.map(([m]) => String(m)).join("\n");
+      expect(warns).toContain("retrying ScienceGate once");
+    } finally {
+      warnSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+  });
+
   it("PIVOT never redraws the just-failed initial topic (attemptedTopics seeded)", async () => {
     mockChat.mockReset();
     // attempt-1: empty PubMed -> no trusted evidence -> PIVOT

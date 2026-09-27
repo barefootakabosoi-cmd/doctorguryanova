@@ -1183,7 +1183,9 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     // the same evidence before falling back to PIVOT (the first reason is kept
     // in attemptReasons for diagnosis).
     let { isSufficient, dossier, reason } = await evaluateEvidence(currentTopic, allArticles, attemptId);
-    if (!isSufficient && reason?.startsWith("safe claim text rejected")) {
+    const dossierRetryable = (r?: string) =>
+      !!r && (r.startsWith("safe claim text rejected") || r === "missing safe claims");
+    if (!isSufficient && dossierRetryable(reason)) {
       console.warn(`[Pipeline] [${attemptId}] Dossier rejected (${reason}); retrying ScienceGate once.`);
       const retry = await evaluateEvidence(currentTopic, allArticles, attemptId);
       ({ isSufficient, dossier, reason } = retry);
@@ -1352,7 +1354,11 @@ export function normalizeModelClosingTags(raw: string): string {
     // Spaced closer "[ / CONTENT ]" (local E2E 2026-09-24): spaces around the
     // slash defeat extract()'s exact-tag match. Deterministic structural
     // repair; the already-correct form is rewritten to itself, harmlessly.
-    .replace(/\[\s*\/\s*(TITLE|EXCERPT|CONTENT|TG_TITLE|TG_POST)\s*\]/g, "[/$1]");
+    .replace(/\[\s*\/\s*(TITLE|EXCERPT|CONTENT|TG_TITLE|TG_POST)\s*\]/g, "[/$1]")
+    // "END"-closer "[CONTENT END]" (prod E2E 2026-09-27 census): the model
+    // switched closer style mid-response. Same deterministic structural
+    // repair class as the spaced-slash form above.
+    .replace(/\[(TITLE|EXCERPT|CONTENT|TG_TITLE|TG_POST)\s+END\]/gi, "[/$1]");
 }
 
 export function generateSourcesBlock(articles: EvidenceItem[]): string {
