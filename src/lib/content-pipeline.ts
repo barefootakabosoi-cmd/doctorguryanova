@@ -1114,7 +1114,13 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   // and section census so the reject reason says WHY the section is empty.
   const truncated = result.choices?.[0]?.finish_reason === "length";
   const diag = `rawLen=${rawText.length} truncated=${truncated} sections: title=${siteTitle ? 1 : 0} excerpt=${siteExcerpt ? 1 : 0} content=${siteContent ? 1 : 0} tgTitle=${telegramTitle ? 1 : 0} tgPost=${telegramPost ? 1 : 0}`;
-  return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost, diag };
+  // Marker census: content=0 with truncated=false and rawLen>500 means the
+  // text EXISTS but extraction missed it - a marker variant the normalizer
+  // does not know. Log every bracketed token actually present in the raw so
+  // one prod run reveals the exact variant verbatim.
+  const markerCensus = (rawText.match(/\[[A-Za-zА-Яа-яЁё\/ _-]{1,24}\]/g) || []).slice(0, 12).join(",");
+  const diagFull = markerCensus ? `${diag} markers=[${markerCensus}]` : diag;
+  return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost, diag: diagFull };
 }
 
 // MAIN PIPELINE
