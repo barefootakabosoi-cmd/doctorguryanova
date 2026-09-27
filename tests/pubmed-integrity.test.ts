@@ -53,6 +53,20 @@ const mockXml = `<?xml version="1.0"?>
   </PubmedArticle>
 </PubmedArticleSet>`;
 
+describe("buildTrustedSearchQuery", () => {
+  it("appends the trusted-design [pt] filter once, verbatim", async () => {
+    const { buildTrustedSearchQuery } = await import("../src/lib/pubmed");
+    const q = buildTrustedSearchQuery("chronic fatigue syndrome treatment");
+    expect(q).toContain("chronic fatigue syndrome treatment AND (");
+    expect(q).toContain("randomized controlled trial[pt]");
+    expect(q).toContain("systematic review[pt]");
+    expect(q).toContain("meta-analysis[pt]");
+    expect(q).toContain("practice guideline[pt]");
+    // exactly one filter block
+    expect(q.split("AND (").length - 1).toBe(1);
+  });
+});
+
 describe("PubMed Source Integrity", () => {
   it("maps official PublicationType labels to server source types", () => {
     const articles = parseArticlesXml(mockXml);

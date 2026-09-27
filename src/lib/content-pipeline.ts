@@ -970,7 +970,7 @@ async function humanizeDraft(
   draft: string,
   dossier: ResearchDossier,
   previousFailure?: string
-): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string }> {
+): Promise<{ siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string; diag: string }> {
   const correction = previousFailure
     ? `\nПРЕДЫДУЩАЯ ВЕРСИЯ БЫЛА ОТКЛОНЕНА: ${previousFailure}. Исправь именно это; не повторяй запрещённую формулировку.\n`
     : "";
@@ -979,7 +979,11 @@ async function humanizeDraft(
     "descriptive"
   );
   const allowsClinicalEffectiveness = CLAIM_STRENGTH_RANK[dossierMaxStrength] >= CLAIM_STRENGTH_RANK.moderate;
-  const prompt = `Ты — медицинский редактор. Твоя задача — переписать сухой научный черновик в живую, экспертную статью для сайта и Telegram.
+  // Prod E2E: the correction injected mid-prompt was ignored 3x in a row
+  // ("Консультации специалист" repeated verbatim on every retry). Leading
+  // position is the one place a correction cannot be diluted by 90 lines
+  // of rules that follow.
+  const prompt = `${correction}Ты — медицинский редактор. Твоя задача — переписать сухой научный черновик в живую, экспертную статью для сайта и Telegram.
 
 ТЕМА ДОСЬЕ (заголовок и текст обязаны сохранять её предмет и целевую группу; обобщение темы запрещено): ${dossier.chosenAngle}
 Исходная тема запроса: ${dossier.topic}
@@ -989,7 +993,7 @@ async function humanizeDraft(
 
 РАЗРЕШЁННЫЕ УТВЕРЖДЕНИЯ (используй ТОЛЬКО их смысл; служебные метки вида [moderate; PMID:...] в текст статьи НЕ переноси — они только для сверки):
 ${dossier.safeClaims.map((claim) => `- ${claim.text}`).join("\n")}
-ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}${correction}
+ОГРАНИЧЕНИЯ: ${dossier.limitations.join("; ")}
 НЕ ИЗУЧЕНО ПО ИСТОЧНИКУ (утверждать улучшение этих исходов ЗАПРЕЩЕНО): ${dossier.whatIsNotKnown.join("; ")}
 ${(dossier.cautions ?? []).length === 0 ? "ЖЁСТКОЕ УСЛОВИЕ: в досье НЕТ клинических предостережений (cautions пуст). НЕ создавай раздел «Клинические предостережения» и не добавляй медицинских предостережений, обязательных рекомендаций, призывов консультироваться с врачом или проходить обследование — этого нет в досье." : `КЛИНИЧЕСКИЕ ПРЕДОСТЕРЕЖЕНИЯ ДОСЬЕ (отрази отдельным абзацем, только эти, без приукрашивания): ${(dossier.cautions ?? []).join("; ")}`}
 ЖЁСТКИЕ ПРАВИЛА HUMANIZER:
@@ -1104,7 +1108,13 @@ HTML-статья для сайта. Структура: <h2>Введение</h
   // (local E2E 2026-09-24). tgFallback above stays: it repairs a corrupted
   // closer, it never invents content.
 
-  return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost };
+  // Prod diagnostics: "no CONTENT section" x3 with zero detail was
+  // undiagnosable from the response body alone (Vercel logs hold the raw
+  // dump, the API response did not). Attach the raw length, truncation flag
+  // and section census so the reject reason says WHY the section is empty.
+  const truncated = result.choices?.[0]?.finish_reason === "length";
+  const diag = `rawLen=${rawText.length} truncated=${truncated} sections: title=${siteTitle ? 1 : 0} excerpt=${siteExcerpt ? 1 : 0} content=${siteContent ? 1 : 0} tgTitle=${telegramTitle ? 1 : 0} tgPost=${telegramPost ? 1 : 0}`;
+  return { siteTitle, siteExcerpt, siteContent, telegramTitle, telegramPost, diag };
 }
 
 // MAIN PIPELINE
@@ -1146,7 +1156,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       // whose title does not declare a synthesis/RCT design).
       const hygieneExcluded = combinedEvidence.length - filterEligibleEvidence(currentTopic, combinedEvidence).length;
       const notTrustedDesign = combinedEvidence.length - hygieneExcluded - allArticles.length;
-      const reason = `no trusted evidence (query: "${pubmedQuery}" -> raw pubmed ${rawPubmed.length} + crossref ${crossrefArticles.length}; hygiene-excluded ${hygieneExcluded}, not-trusted-design ${notTrustedDesign})`;
+      const reason = `no trusted evidence (query: "${pubmedQuery}" -> raw pubmed ${rawPubmed.length} + crossref ${crossrefArticles.length} = pool ${combinedEvidence.length}; hygiene-excluded ${hygieneExcluded}, not-trusted-design ${notTrustedDesign})`;
       attemptReasons.push(`${attemptId}: ${reason}`);
       console.log(`[Pipeline] [${attemptId}] PIVOT. Reason: ${reason}.`);
       let nextCluster = getRandomCluster();
@@ -1184,7 +1194,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
     console.timeEnd("Pipeline Step 2 (Draft)");
 
     // STEP 3: Humanizer с валидацией и регенерацией
-    let versions: { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string };
+    let versions: { siteTitle: string; siteExcerpt: string; siteContent: string; telegramTitle: string; telegramPost: string; diag: string };
     let validation: GeneratedClaimsValidation;
     let telegramValidation: GeneratedClaimsValidation;
     let titleValidation: GeneratedClaimsValidation;
@@ -1217,7 +1227,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       const contentBase = withField(
         (versions.siteContent || "").trim()
           ? validateGeneratedClaims(normalizeMarkdownHeadings(versions.siteContent || ""), dossier)
-          : emptySectionReject("Humanizer returned no CONTENT section (raw-draft fallback removed)"),
+          : emptySectionReject(`Humanizer returned no CONTENT section (raw-draft fallback removed; ${versions.diag})`),
         "content"
       );
       // Quantitative gate MUST see the cleaned copy: validateGeneratedClaims
@@ -1230,7 +1240,7 @@ export async function generateArticle(topic: string, cluster?: KeywordCluster): 
       telegramValidation = withField(
         (versions.telegramPost || "").trim()
           ? validateGeneratedClaims(versions.telegramPost || "", dossier)
-          : emptySectionReject("Humanizer returned no TG_POST section"),
+          : emptySectionReject(`Humanizer returned no TG_POST section; ${versions.diag}`),
         "telegramPost"
       );
       if (!titleValidation.valid || !excerptValidation.valid || !validation.valid || !telegramValidation.valid) {

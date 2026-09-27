@@ -178,10 +178,27 @@ export function mapPublicationType(types: string[]): SourceType | undefined {
   return undefined;
 }
 
+// Prod E2E ("leech therapy varicose veins": 8 raw records, 0 with a trusted
+// design label): the trust gate accepts only guideline/synthesis/RCT designs,
+// so searching without a design restriction spends the whole evidence pool —
+// and a whole pipeline attempt — on records guaranteed to be discarded
+// (live check: the same query with [pt] filters returns 0 hits for that
+// topic, i.e. the theme is structurally unpublishable). Restricting the
+// search itself makes a dead topic cheap to detect and a live topic's pool
+// almost entirely trusted. Title-based inference in isTrustedClinicalEvidence
+// stays as the fallback layer for Crossref records without PublicationType.
+const TRUSTED_DESIGN_FILTER =
+  " AND (randomized controlled trial[pt] OR systematic review[pt] OR meta-analysis[pt] OR practice guideline[pt] OR guideline[pt])";
+
+/** PubMed esearch query restricted to trusted clinical designs. */
+export function buildTrustedSearchQuery(query: string): string {
+  return `${query}${TRUSTED_DESIGN_FILTER}`;
+}
+
 // Главная функция: поиск + получение статей
 export async function getPubMedArticles(query: string, maxResults: number = 5): Promise<PubMedArticle[]> {
   try {
-    const pmids = await searchPubMed(query, maxResults);
+    const pmids = await searchPubMed(buildTrustedSearchQuery(query), maxResults);
     if (pmids.length === 0) {
       console.log(`PubMed: нет статей по запросу "${query}"`);
       return [];

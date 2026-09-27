@@ -613,6 +613,31 @@ describe("Attempt tagging and evidence trace in logs", () => {
     expect(mockPubmed).toHaveBeenCalledWith("insomnia treatment non-pharmacological", 8);
   });
 
+  it("empty CONTENT reject carries humanizer diag (rawLen/truncated/sections)", async () => {
+    mockChat.mockReset();
+    mockChat.mockResolvedValueOnce(gatePass("New Topic"));
+    mockChat.mockResolvedValueOnce(draftText("Dry draft."));
+    // Humanizer returns only TITLE/EXCERPT (the truncation signature that
+    // cost a whole prod attempt-1 with zero detail in the failure reason).
+    mockChat.mockResolvedValueOnce({ choices: [{ message: { content: "[TITLE]\nТестовый заголовок\n[/TITLE]\n[EXCERPT]\nОсторожное описание.\n[/EXCERPT]" } }] });
+    // Retry loop re-calls ONLY humanizeDraft (gate/draft are not re-run):
+    // attempt-2 must be the next humanizer response, not a second ScienceGate.
+    mockChat.mockResolvedValueOnce(humanized("<p>Осторожный вывод.</p>"));
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const result = await generateArticle("New Topic");
+      expect(result.status).toBe("success");
+      const allLogs = [...logSpy.mock.calls, ...warnSpy.mock.calls].map((c) => String(c[0])).join("\n");
+      expect(allLogs).toContain("no CONTENT section");
+      expect(allLogs).toMatch(/rawLen=\d+ truncated=(true|false) sections:/);
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
   it("stripResidualMarkdown removes markers without touching words", () => {
     expect(stripResidualMarkdown("## Заголовок")).toBe("Заголовок");
     expect(stripResidualMarkdown("**Жирный** текст")).toBe("Жирный текст");
